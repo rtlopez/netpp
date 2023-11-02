@@ -136,6 +136,18 @@ public:
 
         return afd;
     }
+
+    static const std::string getpeername(sock_t fd)
+    {
+        sockaddr_in addr;
+        socklen_t addr_size = sizeof(sockaddr_in);
+        ::getpeername(fd, (sockaddr *)&addr, &addr_size);
+        uint16_t port = addr.sin_port;
+        in_addr_t * saddr = &addr.sin_addr.s_addr;
+        char ip_str[INET_ADDRSTRLEN];
+        const char * clientip = ::inet_ntop(AF_INET, saddr, ip_str, INET_ADDRSTRLEN);
+        return std::string{clientip} + std::string{":"} + std::to_string(port);
+    }
 };
 
 class Epoll;
@@ -163,7 +175,7 @@ public:
 
     void init()
     {
-        sock_t fd = epoll_create1(0);
+        sock_t fd = ::epoll_create1(0);
         
         debug("Epoll::init", fd);
 
@@ -209,7 +221,7 @@ public:
 
         while (!_stop)
         {
-            int ret = epoll_wait(_fd, _events, MAX_EVENTS, _timeout);
+            int ret = ::epoll_wait(_fd, _events, MAX_EVENTS, _timeout);
             if (ret == -1)
             {
                 debug("Epoll::run", "error", ret, errno);

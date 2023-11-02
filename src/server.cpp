@@ -33,28 +33,14 @@ int main()
     };
 
     auto onConn = [](sock_t s) -> TcpServer::Status {
-        sockaddr_in addr;
-        socklen_t addr_size = sizeof(sockaddr_in);
-        ::getpeername(s, (sockaddr *)&addr, &addr_size);
-        in_addr_t * saddr = &addr.sin_addr.s_addr;
-        char ip_str[INET_ADDRSTRLEN];
-        const char * clientip = ::inet_ntop(AF_INET, saddr, ip_str, INET_ADDRSTRLEN);
-
-        std::cout << "* conn accept: " << clientip << "\n";
-
+        std::string ip = std::move(Socket::getpeername(s));
+        std::cout << "* conn accept: " << ip << "\n";
         return TcpServer::OK;
     };
 
     auto onClose = [](sock_t s) -> TcpServer::Status {
-        sockaddr_in addr;
-        socklen_t addr_size = sizeof(sockaddr_in);
-        ::getpeername(s, (sockaddr *)&addr, &addr_size);
-        in_addr_t * saddr = &addr.sin_addr.s_addr;
-        char ip_str[INET_ADDRSTRLEN];
-        const char * clientip = ::inet_ntop(AF_INET, saddr, ip_str, INET_ADDRSTRLEN);
-
-        std::cout << "* conn close: " << clientip << "\n";
-
+        std::string ip = std::move(Socket::getpeername(s));
+        std::cout << "* conn close: " << ip << "\n";
         return TcpServer::OK;
     };
 
