@@ -44,14 +44,14 @@ int main()
         return TcpServer::OK;
     };
 
-    Epoll epoll;
-    TcpServer tcpServer{"127.0.0.1", 1234, epoll};
+    EventLoopEpoll loop;
+    TcpServer tcpServer{"127.0.0.1", 1234, loop};
 
     tcpServer.onConn(onConn);
     tcpServer.onRecv(onRecv);
     tcpServer.onClose(onClose);
 
-    epoll.run();
+    loop.run();
 
     return 0;
 }

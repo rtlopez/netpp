@@ -73,10 +73,10 @@ public:
     SocketException(int eno, const std::string& msg): ErrnoException(eno, msg) {}
 };
 
-class EpollException: public ErrnoException
+class EventLoopException: public ErrnoException
 {
 public:
-    EpollException(int eno, const std::string& msg): ErrnoException(eno, msg) {}
+    EventLoopException(int eno, const std::string& msg): ErrnoException(eno, msg) {}
 };
 
 class Socket
@@ -151,88 +151,88 @@ public:
     }
 };
 
-class EpollHandler
+class EventLoopHandler
 {
 public:
     virtual void handle(sock_t s, uint32_t events) = 0;
 };
 
-class Epoll
+class EventLoop
 {
 public:
-    Epoll(): _fd(-1), _running(true), _timeout(10000)
-    {
-        init();
-    }
+    virtual void add(sock_t fd, uint32_t events, EventLoopHandler* handler) = 0;
+    virtual void del(sock_t fd) = 0;
+    virtual void run() = 0;
+};
 
-    ~Epoll()
-    {
-        debug("Epoll::close", _fd);
-        if(_fd >= 0) ::close(_fd);
-    }
-
-    void init()
+class EventLoopEpoll: public EventLoop
+{
+public:
+    EventLoopEpoll(): _fd(-1), _running(true), _timeout(10000)
     {
         sock_t fd = ::epoll_create1(0);
         
-        debug("Epoll::init", fd);
+        debug("EventLoopEpoll::init", fd);
 
-        if (fd < 0) throw EpollException(errno, "epoll_create1() failed");
+        if (fd < 0) throw EventLoopException(errno, "epoll_create1() failed");
 
         _fd = fd;
     }
 
-    void add(sock_t fd, uint32_t events, EpollHandler* handler)
+    virtual ~EventLoopEpoll()
     {
-        if(!_fd) throw EpollException(-1, "Epoll not initialized");
+        debug("EventLoopEpoll::close", _fd);
+        if(_fd >= 0) ::close(_fd);
+    }
 
-        debug("Epoll::add", fd, events);
+    virtual void add(sock_t fd, uint32_t events, EventLoopHandler* handler) override
+    {
+        if(!_fd) throw EventLoopException(-1, "EventLoopEpoll not initialized");
 
-        epoll_event event = {0, {0}};
+        debug("EventLoopEpoll::add", fd, events);
 
-        event.events = events;
-        event.data.fd = fd;
+        epoll_event event = {events, {.fd = fd}};
 
         if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &event) < 0)
         {
-            throw EpollException(errno, "epoll_ctl(EPOLL_CTL_ADD) failed");
+            throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_ADD) failed");
         }
 
         _handlers[fd] = handler;
     }
 
-    void del(sock_t fd)
+    virtual void del(sock_t fd) override
     {
-        if(!_fd) throw EpollException(errno, "Epoll not initialized");
+        if(!_fd) throw EventLoopException(errno, "EventLoopEpoll not initialized");
 
-        debug("Epoll::del", fd);
+        debug("EventLoopEpoll::del", fd);
 
         if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, NULL) < 0)
         {
-            throw EpollException(errno, "epoll_ctl(EPOLL_CTL_DEL) failed");
+            throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_DEL) failed");
         }
 
         _handlers.erase(fd);
     }
 
-    void run()
+    virtual void run() override
     {
-        if(!_fd) throw EpollException(errno, "Epoll not initialized");
+        if(!_fd) throw EventLoopException(errno, "EventLoopEpoll not initialized");
 
         while (_running)
         {
             int ret = ::epoll_wait(_fd, _events, MAX_EVENTS, _timeout);
             if (ret == -1)
             {
-                debug("Epoll::run", "error", ret, errno);
+                debug("EventLoopEpoll::run", "error", ret, errno);
                 if (errno == EINTR) continue; // interrupted, try again
-                throw EpollException(errno, "epoll_wait() failed");
+                throw EventLoopException(errno, "epoll_wait() failed");
             }
 
             if (ret == 0)
             {
                 // `epoll_wait` reached its timeout
-                debug("Epoll::run", "timeout", ret);
+                debug("EventLoopEpoll::run", "timeout", ret);
                 continue;
             }
 
@@ -245,8 +245,8 @@ public:
 
     void handle(const epoll_event& ev)
     {
-        debug("Epoll::run", "handle", ev.data.fd, ev.events);
-        EpollHandler* handler = _handlers[ev.data.fd];
+        debug("EventLoopEpoll::run", "handle", ev.data.fd, ev.events);
+        EventLoopHandler* handler = _handlers[ev.data.fd];
         handler->handle(ev.data.fd, ev.events);
     }
 
@@ -261,10 +261,10 @@ private:
     bool _running;
     int _timeout;
     epoll_event _events[MAX_EVENTS];
-    std::map<sock_t, EpollHandler*> _handlers;
+    std::map<sock_t, EventLoopHandler*> _handlers;
 };
 
-class TcpServer: public EpollHandler
+class TcpServer: public EventLoopHandler
 {
 public:
     enum Status {
@@ -274,10 +274,15 @@ public:
     };
     typedef std::function<Status(sock_t)> callback_t;
 
-    TcpServer(const char * addr, uint16_t port, Epoll& epoll):
-        _addr(addr), _port(port), _epoll(epoll), _s(-1)
+    TcpServer(const char * addr, uint16_t port, EventLoop& loop):
+        _addr(addr), _port(port), _loop(lopp), _s(-1)
     {
-        init();
+        sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+        debug("TcpServer::init", s);
+        Socket::bind(s, _addr, _port);
+        Socket::listen(s, 100);
+        _s = s;
+        _loop.add(s, EPOLLIN | EPOLLPRI, this);
     }
     virtual ~TcpServer()
     {
@@ -289,16 +294,6 @@ public:
     void onRecv(callback_t cb) { _onRecv = cb; }
     void onClose(callback_t cb) { _onClose = cb; }
 
-    void init()
-    {
-        sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
-        debug("TcpServer::init", s);
-        Socket::bind(s, _addr, _port);
-        Socket::listen(s, 100);
-        _s = s;
-        _epoll.add(s, EPOLLIN | EPOLLPRI, this);
-    }
-
     virtual void handle(sock_t s, uint32_t events) override
     {
         if (s == _s)
@@ -307,7 +302,7 @@ public:
                 debug("TcpServer::handle", "accept", s, events);
                 sockaddr_in addr;
                 sock_t as = Socket::accept(_s, addr);
-                _epoll.add(as, EPOLLIN | EPOLLPRI, this);
+                _loop.add(as, EPOLLIN | EPOLLPRI, this);
                 if(_onConn) _onConn(as);
             } catch(...) {
                 debug("TcpServer::handle", "accept", "exception", s, events);
@@ -349,14 +344,14 @@ private:
     void close(sock_t s)
     {
         debug("TcpServer::close", s);
-        _epoll.del(s);
+        _loop.del(s);
         if(_onClose) _onClose(s);
         ::close(s);
     }
 
     const char * _addr;
     uint16_t _port;
-    Epoll& _epoll;
+    EventLoop& _loop;
     callback_t _onRecv;
     callback_t _onConn;
     callback_t _onClose;
