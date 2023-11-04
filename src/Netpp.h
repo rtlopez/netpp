@@ -13,6 +13,7 @@ extern "C" {
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <set>
 
 #if 1
 namespace {
@@ -129,7 +130,7 @@ public:
 
         sock_t afd = ::accept(fd, (sockaddr *)&addr, &addr_len);
 
-        debug("Socket::accept", afd);
+        debug("Socket::accept", fd, afd, errno);
 
         if (errno == EAGAIN) return 0;
         
@@ -264,7 +265,8 @@ private:
     std::map<sock_t, EventLoopHandler*> _handlers;
 };
 
-class TcpServer: public EventLoopHandler
+
+class Protocol
 {
 public:
     enum Status {
@@ -272,27 +274,29 @@ public:
         ERROR,
         CLOSE,
     };
-    typedef std::function<Status(sock_t)> callback_t;
+    virtual Status onConnect(sock_t s) = 0;
+    virtual Status onReceive(sock_t s) = 0;
+    virtual Status onDisconnect(sock_t s) = 0;
+};
 
-    TcpServer(const char * addr, uint16_t port, EventLoop& loop):
-        _addr(addr), _port(port), _loop(lopp), _s(-1)
+class TcpServer: public EventLoopHandler
+{
+public:
+    TcpServer(const char * addr, uint16_t port, EventLoop* loop, Protocol* protocol):
+        _addr(addr), _port(port), _loop(loop), _protocol(protocol), _s(-1)
     {
         sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
         debug("TcpServer::init", s);
         Socket::bind(s, _addr, _port);
         Socket::listen(s, 100);
         _s = s;
-        _loop.add(s, EPOLLIN | EPOLLPRI, this);
+        _loop->add(s, EPOLLIN | EPOLLPRI, this);
     }
     virtual ~TcpServer()
     {
         debug("TcpServer::close", _s);
         if(_s >= 0) ::close(_s);
     }
-
-    void onConn(callback_t cb) { _onConn = cb; }
-    void onRecv(callback_t cb) { _onRecv = cb; }
-    void onClose(callback_t cb) { _onClose = cb; }
 
     virtual void handle(sock_t s, uint32_t events) override
     {
@@ -302,8 +306,13 @@ public:
                 debug("TcpServer::handle", "accept", s, events);
                 sockaddr_in addr;
                 sock_t as = Socket::accept(_s, addr);
-                _loop.add(as, EPOLLIN | EPOLLPRI, this);
-                if(_onConn) _onConn(as);
+                if(as <= 0) return;
+                _loop->add(as, EPOLLIN | EPOLLPRI, this);
+                Protocol::Status status = _protocol->onConnect(as);
+                if(status == Protocol::CLOSE || status == Protocol::ERROR)
+                {
+                    close(as);
+                }
             } catch(...) {
                 debug("TcpServer::handle", "accept", "exception", s, events);
             }
@@ -321,13 +330,10 @@ public:
         {
             try {
                 debug("TcpServer::handle", "recv", s, events);
-                if(_onRecv)
+                Protocol::Status status = _protocol->onReceive(s);
+                if(status == Protocol::CLOSE || status == Protocol::ERROR)
                 {
-                    Status status = _onRecv(s);
-                    if(status == CLOSE || status == ERROR)
-                    {
-                        close(s);
-                    }
+                    close(s);
                 }
             } catch(...) {
                 debug("TcpServer::handle", "recv", "exception", s, events);
@@ -344,18 +350,143 @@ private:
     void close(sock_t s)
     {
         debug("TcpServer::close", s);
-        _loop.del(s);
-        if(_onClose) _onClose(s);
+        _loop->del(s);
+        _protocol->onDisconnect(s);
         ::close(s);
     }
 
     const char * _addr;
     uint16_t _port;
-    EventLoop& _loop;
-    callback_t _onRecv;
-    callback_t _onConn;
-    callback_t _onClose;
+    EventLoop* _loop;
+    Protocol* _protocol;
     sock_t _s;
+};
+
+class EchoProtocol: public Protocol
+{
+public:
+    virtual ~EchoProtocol() {}
+
+    virtual Status onConnect(sock_t s)
+    {
+        std::string ip = std::move(Socket::getpeername(s));
+        std::cout << "[ECHO] conn accept: " << ip << "\n";
+        return Protocol::OK;
+    }
+
+    virtual Status onDisconnect(sock_t s)
+    {
+        std::string ip = std::move(Socket::getpeername(s));
+        std::cout << "[ECHO] conn close: " << ip << "\n";
+        return Protocol::OK;
+    }
+
+    virtual Status onReceive(sock_t s)
+    {
+        char buff[1024];
+        ssize_t len = ::recv(s, buff, sizeof(buff), 0);
+
+        if(len < 0)
+        {
+            std::cout << "[ECHO] data error: " << len << " " << errno << "\n";
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return Protocol::OK;
+            return Protocol::ERROR;
+        }
+
+        if(len == 0)
+        {
+            std::cout << "[ECHO] empty data\n";
+            return Protocol::CLOSE;
+        }
+
+        ssize_t slen = ::send(s, buff, len, 0);
+
+        if(slen != len)
+        {
+            std::cout << "[ECHO] FIXME: not all data resent\n";
+        }
+
+        buff[len] = '\0';
+        if(buff[len - 1] == '\n') buff[len - 1] = '\0';
+        if(buff[len - 2] == '\r') buff[len - 2] = '\0';
+
+        std::cout << "[ECHO] new data: " << buff << "\n";
+
+        return Protocol::OK;
+    }
+};
+
+class ChatProtocol: public Protocol
+{
+public:
+    virtual ~ChatProtocol() {}
+
+    virtual Status onConnect(sock_t s)
+    {
+        _clients.insert(s);
+
+        const char buff[] = "Welcome to the chat room\n";
+        ssize_t len = sizeof(buff) - 1;
+        ssize_t slen = send(s, buff, len, 0);
+        if(slen != len)
+        {
+            std::cout << "[CHAT] FIXME: not all data resent\n";
+        }
+
+        std::string ip = std::move(Socket::getpeername(s));
+        std::cout << "[CHAT] " << ip << " joined room\n";
+
+        return Protocol::OK;
+    }
+
+    virtual Status onDisconnect(sock_t s)
+    {
+        _clients.erase(s);
+
+        std::string ip = std::move(Socket::getpeername(s));
+        std::cout << "[CHAT] " << ip << " left room\n";
+
+        return Protocol::OK;
+    }
+
+    virtual Status onReceive(sock_t s)
+    {
+        char buff[1024];
+        ssize_t len = ::recv(s, buff, sizeof(buff), 0);
+
+        if(len < 0)
+        {
+            std::cout << "[CHAT] data error: " << len << " " << errno << "\n";
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return Protocol::OK;
+            return Protocol::ERROR;
+        }
+
+        if(len == 0)
+        {
+            std::cout << "[CHAT] empty data\n";
+            return Protocol::CLOSE;
+        }
+
+        for(sock_t c: _clients)
+        {
+            if(c == s) continue;
+            ssize_t slen = ::send(c, buff, len, 0);
+            if(slen != len)
+            {
+                std::cout << "[CHAT] FIXME: not all data resent\n";
+            }
+        }
+
+        buff[len] = '\0';
+        if(buff[len - 1] == '\n') buff[len - 1] = '\0';
+        if(buff[len - 2] == '\r') buff[len - 2] = '\0';
+
+        std::cout << "[CHAT] new data: " << buff << "\n";
+
+        return Protocol::OK;
+    }
+private:
+    std::set<sock_t> _clients;
 };
 
 }
