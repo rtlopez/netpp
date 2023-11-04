@@ -1,4 +1,4 @@
-CXXFLAGS=-Wall -std=c++17 -Og
+CXXFLAGS=-Wall -std=c++17 -O0 -g3
 LDFLAGS=
 DEPS=$(wildcard src/*.h) Makefile
 SRCS=$(wildcard src/*.cpp)

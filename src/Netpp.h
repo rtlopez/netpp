@@ -7,15 +7,20 @@ extern "C" {
 #include <unistd.h>
 }
 
+#include <algorithm>
+#include <charconv>
 #include <cstring>
 #include <cerrno>
 #include <functional>
 #include <map>
+#include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <set>
+#include <tuple>
 
-#if 1
+#if 0
 namespace {
 
 template<typename T>
@@ -96,6 +101,16 @@ public:
 
     static int bind(sock_t fd, const char * bind_addr, uint16_t bind_port)
     {
+        const int enable = 1;
+        if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+        {
+            throw SocketException(errno, "setsockopt(SO_REUSEADDR) failed");
+        }
+        if (::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) < 0)
+        {
+            throw SocketException(errno, "setsockopt(SO_REUSEPORT) failed");
+        }
+
         sockaddr_in addr;
         socklen_t addr_len = sizeof(addr);
         std::memset(&addr, 0, addr_len);
@@ -487,6 +502,303 @@ public:
     }
 private:
     std::set<sock_t> _clients;
+};
+
+class HttpRequest
+{
+    enum State {
+        PARSE_METHOD,
+        PARSE_PATH,
+        PARSE_VERSION,
+        PARSE_HEADERS,
+        PARSE_DONE,
+    };
+public:
+    std::string method;
+    std::string path;
+    std::string version;
+    std::map<std::string, std::string> headers;
+    std::vector<char> header;
+    std::vector<char> body;
+
+    std::tuple<bool, bool, size_t> receive(const char * c, size_t len)
+    {
+        if(!len)
+        {
+            return {_headerReceived, _headerParsed, body.size()};
+        }
+        if(!_headerReceived)
+        {
+            std::string s{c, len};
+            size_t pos = s.find("\r\n\r\n");
+            if(pos == std::string::npos)
+            {
+                std::copy(c, c + len, std::back_inserter(header));
+            }
+            else
+            {
+                std::copy(c, c + pos + 4, std::back_inserter(header));
+                _headerReceived = true;
+                if(pos + 4 < len)
+                {
+                    std::copy(c + pos + 4, c + len, std::back_inserter(body));
+                }
+                parse();
+            }
+        }
+        else
+        {
+            std::copy(c, c + len, std::back_inserter(body));
+        }
+        return {_headerReceived, _headerParsed, body.size()};
+    }
+
+    bool parse()
+    {
+        State state = PARSE_METHOD;
+        std::string s{header.begin(), header.end()};
+        size_t from = 0;
+        while(true)
+        {
+            switch(state)
+            {
+                case PARSE_METHOD: {
+                    size_t to = s.find(' ', from);
+                    if(to == std::string::npos) return false;
+                    method = s.substr(from, to - from);
+                    from = to + 1;
+                    state = PARSE_PATH;
+                    break;
+                }
+                case PARSE_PATH: {
+                    size_t to = s.find(' ', from);
+                    if(to == std::string::npos) return false;
+                    path = s.substr(from, to - from);
+                    from = to + (1 + 4 + 1); // skip " HTTP/"
+                    state = PARSE_VERSION;
+                    break;
+                }
+                case PARSE_VERSION: {
+                    size_t to = s.find("\r\n", from);
+                    if(to == std::string::npos) return false;
+                    version = s.substr(from, to - from);
+                    from = to + 2;
+                    state = PARSE_HEADERS;
+                    break;
+                }
+                case PARSE_HEADERS: {
+                    size_t to = s.find("\r\n", from);
+                    if(to == std::string::npos) return false;
+                    if(from == to)
+                    {
+                        state = PARSE_DONE;
+                        _headerParsed = true;
+                        break;
+                    }
+                    std::string line = s.substr(from, to - from);
+                    size_t cto = line.find(':');
+                    if(cto == std::string::npos) return false;
+                    std::string key = trim(line.substr(0, cto));
+                    std::string val = trim(line.substr(cto + 1));
+                    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+                    headers[key] = val;
+                    from = to + 2;
+                    break;
+                }
+                case PARSE_DONE:
+                    return true;
+                    break;
+            }
+        }
+        return false;
+    }
+
+    const std::string str() const
+    {
+        std::ostringstream ss;
+
+        ss << method << ' ' << path << " HTTP/" << version << "\r\n";
+        for(auto [key, val]: headers)
+        {
+            ss << key << ": " << val << "\r\n";
+        }
+        ss << "\r\n";
+
+        return ss.str();
+    }
+
+    bool headerReceived() const
+    {
+        return _headerReceived;
+    }
+
+    bool headerParsed() const
+    {
+        return _headerParsed;
+    }
+private:
+    bool _headerReceived = false;
+    bool _headerParsed = false;
+
+    static std::string trim(std::string str)
+    {
+        str.erase(str.find_last_not_of(' ') + 1);       //suffixing spaces
+        str.erase(0, str.find_first_not_of(' '));       //prefixing spaces
+        return str;
+    }
+};
+
+class HttpResponse
+{
+public:
+    std::string version = "0.9";
+    int status = 200;
+    std::map<std::string, std::string> headers;
+
+    const std::string str() const
+    {
+        std::ostringstream ss;
+
+        ss << "HTTP/" << version << ' ' << status << ' ' << codeToMessage(status) << "\r\n";
+        for(auto [key, val]: headers)
+        {
+            ss << key << ": " << val << "\r\n";
+        }
+        ss << "\r\n";
+
+        return ss.str();
+    }
+
+    static const char * codeToMessage(int code)
+    {
+        switch(code)
+        {
+            case 100: return "Continue";
+
+            case 200: return "OK";
+            case 201: return "Created";
+            case 204: return "No Content";
+            case 301: return "Moved Permanently";
+            case 302: return "Found";
+            case 304: return "Not Modified";
+
+            case 400: return "Bad Request";
+            case 401: return "Unauthorized";
+            case 403: return "Forbidden";
+            case 404: return "Not Found";
+            case 405: return "Method Not Allowed";
+            case 406: return "Not Acceptable";
+            case 408: return "Request Timeout";
+            case 410: return "Gone";
+            case 411: return "Length Required";
+            case 413: return "Payload Too Large";
+            case 414: return "URI Too Long";
+            case 415: return "Unsupported Media Type";
+            case 429: return "Too Many Requests";
+
+            case 500: return "Internal Server Error";
+            case 501: return "Not Implemented";
+            case 502: return "Bad Gateway";
+            case 503: return "Service Unavailable";
+            case 504: return "Gateway Timeout";
+        }
+        return "Unknown";
+    }
+};
+
+class HttpProtocol: public Protocol
+{
+public:
+    virtual ~HttpProtocol() {}
+
+    virtual Status onConnect(sock_t s)
+    {
+        _requests[s] = std::make_shared<HttpRequest>();
+        std::string ip = std::move(Socket::getpeername(s));
+        std::cout << "[HTTP] " << ip << " connected\n";
+        return Protocol::OK;
+    }
+
+    virtual Status onDisconnect(sock_t s)
+    {
+        _requests.erase(s);
+        std::string ip = std::move(Socket::getpeername(s));
+        std::cout << "[HTTP] " << ip << " disconnected\n";
+        return Protocol::OK;
+    }
+
+    virtual Status onReceive(sock_t s)
+    {
+        char buff[1024];
+        ssize_t len = ::recv(s, buff, sizeof(buff), 0);
+
+        if(len < 0)
+        {
+            std::cout << "[HTTP] data error: " << len << " " << errno << "\n";
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return Protocol::OK;
+            return Protocol::ERROR;
+        }
+
+        if(len == 0)
+        {
+            return Protocol::CLOSE;
+        }
+
+        std::shared_ptr<HttpRequest> req = _requests[s];
+        auto [headerReceived, headerParsed, bodySize] = req->receive(buff, len);
+
+        if(headerReceived)
+        {
+            if(!headerParsed)
+            {
+                std::cout << "[HTTP] Malformed request\n";
+                std::cout << "[HTTP] " << std::string{req->header.begin(), req->header.end()} << "\n";
+                sendHeaders(s, req, 400, 0);
+                return Protocol::CLOSE;
+            }
+            else
+            {
+                size_t expectedSize = 0;
+                auto it = req->headers.find("content-length");
+                if(it != req->headers.end())
+                {
+                    std::string s = it->second;
+                    std::from_chars(s.data(), s.data() + s.size(), expectedSize);
+                }
+
+                if(bodySize == expectedSize)
+                {
+                    const char * content = "<html>\n<head></head>\n<body></body>\n</html>\n";
+                    size_t len = strlen(content);
+                    sendHeaders(s, req, 200, len);
+                    sendBody(s, content, len);
+                }
+            }
+        }
+
+        return Protocol::OK;
+    }
+
+private:
+    void sendHeaders(sock_t s, std::shared_ptr<HttpRequest> req, int status, size_t len)
+    {
+        HttpResponse res;
+        res.status = status;
+        res.version = req->version;
+        res.headers["Content-Type"] = "text/html";
+        res.headers["Content-Length"] = std::to_string(len);
+        const std::string headers = res.str();
+        ssize_t ret = ::send(s, headers.c_str(), headers.size(), 0);
+        std::cout << "[HTTP] sent headers " << ret << ' ' << errno << ' ' << strerror(errno) << "\n";
+    }
+
+    void sendBody(sock_t s, const char * content, size_t len)
+    {
+        ssize_t ret = ::send(s, content, len, 0);
+        std::cout << "[HTTP] sent body " << ret << ' ' << errno << ' ' << strerror(errno) << "\n";
+    }
+
+    std::map<sock_t, std::shared_ptr<HttpRequest>> _requests;
 };
 
 }
