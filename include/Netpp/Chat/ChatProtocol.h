@@ -25,7 +25,7 @@ public:
 
         const char buff[] = "Welcome to the chat room\n";
         ssize_t len = sizeof(buff) - 1;
-        ssize_t slen = send(s, buff, len, 0);
+        ssize_t slen = Socket::send(s, buff, len, 0);
         if(slen != len)
         {
             std::cout << "[CHAT] FIXME: not all data resent\n";
@@ -50,7 +50,7 @@ public:
     virtual Status onReceive(sock_t s)
     {
         char buff[1024];
-        ssize_t len = ::recv(s, buff, sizeof(buff), 0);
+        ssize_t len = Socket::recv(s, buff, sizeof(buff), 0);
 
         if(len < 0)
         {
@@ -68,7 +68,7 @@ public:
         for(sock_t c: _clients)
         {
             if(c == s) continue;
-            ssize_t slen = ::send(c, buff, len, 0);
+            ssize_t slen = Socket::send(c, buff, len, 0);
             if(slen != len)
             {
                 std::cout << "[CHAT] FIXME: not all data resent\n";

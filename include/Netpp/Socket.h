@@ -29,6 +29,16 @@ public:
         return fd;
     }
 
+    static ssize_t send(sock_t fd, const void * buf, size_t len, int flags)
+    {
+        return ::send(fd, buf, len, flags);
+    }
+
+    static ssize_t recv(sock_t fd, const void * buf, size_t len, int flags)
+    {
+        return ::recv(fd, buf, len, flags);
+    }
+
     static int bind(sock_t fd, const char * bind_addr, uint16_t bind_port)
     {
         const int enable = 1;

@@ -35,7 +35,7 @@ public:
     virtual Status onReceive(sock_t s)
     {
         char buff[1024];
-        ssize_t len = ::recv(s, buff, sizeof(buff), 0);
+        ssize_t len = Socket::recv(s, buff, sizeof(buff), 0);
 
         if(len < 0)
         {
@@ -50,7 +50,7 @@ public:
             return Protocol::CLOSE;
         }
 
-        ssize_t slen = ::send(s, buff, len, 0);
+        ssize_t slen = Socket::send(s, buff, len, 0);
 
         if(slen != len)
         {

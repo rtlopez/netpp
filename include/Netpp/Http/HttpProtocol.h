@@ -42,7 +42,7 @@ public:
     virtual Status onReceive(sock_t s)
     {
         char buff[1024];
-        ssize_t len = ::recv(s, buff, sizeof(buff), 0);
+        ssize_t len = Socket::recv(s, buff, sizeof(buff), 0);
 
         if(len < 0)
         {
@@ -100,14 +100,14 @@ private:
         res.headers["content-type"] = "text/html";
         res.headers["content-length"] = std::to_string(len);
         const std::string headers = res.str();
-        ssize_t ret = ::send(s, headers.c_str(), headers.size(), 0);
-        std::cout << "[HTTP] sent headers " << ret << ' ' << errno << ' ' << strerror(errno) << "\n";
+        ssize_t slen = Socket::send(s, headers.c_str(), headers.size(), 0);
+        std::cout << "[HTTP] sent headers " << slen << ' ' << errno << ' ' << strerror(errno) << "\n";
     }
 
     void sendBody(sock_t s, const char * content, size_t len)
     {
-        ssize_t ret = ::send(s, content, len, 0);
-        std::cout << "[HTTP] sent body " << ret << ' ' << errno << ' ' << strerror(errno) << "\n";
+        ssize_t slen = Socket::send(s, content, len, 0);
+        std::cout << "[HTTP] sent body " << slen << ' ' << errno << ' ' << strerror(errno) << "\n";
     }
 
     std::map<sock_t, std::shared_ptr<HttpRequest>> _requests;
