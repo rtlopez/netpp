@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "Netpp/Http/HttpException.h"
 #include "Netpp/Http/HttpRequest.h"
 #include "Netpp/Http/HttpResponse.h"
 #include "Netpp/Protocol.h"
@@ -56,38 +57,29 @@ public:
             return Protocol::CLOSE;
         }
 
+        std::cout << std::string(buff, len);
+
         std::shared_ptr<HttpRequest> req = _requests[s];
-        auto [headerReceived, headerParsed, bodySize] = req->receive(buff, len);
-
-        if(headerReceived)
+        try
         {
-            if(!headerParsed)
-            {
-                std::cout << "[HTTP] Malformed request\n";
-                std::cout << "[HTTP] " << std::string{req->header.begin(), req->header.end()} << "\n";
-                sendHeaders(s, req, 400, 0);
-                return Protocol::CLOSE;
-            }
-            else
-            {
-                size_t expectedSize = 0;
-                auto it = req->headers.find("content-length");
-                if(it != req->headers.end())
-                {
-                    std::string s = it->second;
-                    std::from_chars(s.data(), s.data() + s.size(), expectedSize);
-                }
+            req->receive(buff, len);
 
-                if(bodySize == expectedSize)
-                {
-                    const char * content = "<html>\n<head></head>\n<body></body>\n</html>\n";
-                    size_t len = strlen(content);
-                    sendHeaders(s, req, 200, len);
-                    sendBody(s, content, len);
-                }
+            if(req->headerParsed() && req->bodyReceived())
+            {
+                const char * content = "<html>\n<head><title>Not Found</title></head>\n<body><h1>Not Found</h1></body>\n</html>\n";
+                size_t len = strlen(content);
+                sendHeaders(s, req, 404, len);
+                sendBody(s, content, len);
             }
         }
-
+        catch(const HttpException& e)
+        {
+            const char * content = "<html>\n<head><title>Invalid request</title></head>\n<body><h1>Invalid Request</h1></body>\n</html>\n";
+            size_t len = strlen(content);
+            sendHeaders(s, req, e.code(), len);
+            sendBody(s, content, len);
+            return Protocol::CLOSE;
+        }
         return Protocol::OK;
     }
 

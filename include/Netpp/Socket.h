@@ -34,7 +34,7 @@ public:
         return ::send(fd, buf, len, flags);
     }
 
-    static ssize_t recv(sock_t fd, const void * buf, size_t len, int flags)
+    static ssize_t recv(sock_t fd, void * buf, size_t len, int flags)
     {
         return ::recv(fd, buf, len, flags);
     }

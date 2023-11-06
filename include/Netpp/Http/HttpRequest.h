@@ -4,8 +4,9 @@
 #include <map>
 #include <sstream>
 #include <string>
-#include <tuple>
 #include <vector>
+
+#include "Netpp/Http/HttpException.h"
 
 namespace Netpp
 {
@@ -30,16 +31,14 @@ public:
     std::vector<char> header;
     std::vector<char> body;
 
-    std::tuple<bool, bool, size_t> receive(const char * c, size_t len)
+    void receive(const char * c, size_t len)
     {
-        if(!len)
-        {
-            return {_headerReceived, _headerParsed, body.size()};
-        }
+        if(!len) return;
         if(!_headerReceived)
         {
             std::string s{c, len};
             size_t pos = s.find("\r\n\r\n");
+            if(!header.size()) header.reserve(1024);
             if(pos == std::string::npos)
             {
                 std::copy(c, c + len, std::back_inserter(header));
@@ -48,18 +47,20 @@ public:
             {
                 std::copy(c, c + pos + 4, std::back_inserter(header));
                 _headerReceived = true;
+                if(!parse())
+                {
+                    throw HttpException(400);
+                }
                 if(pos + 4 < len)
                 {
                     std::copy(c + pos + 4, c + len, std::back_inserter(body));
                 }
-                parse();
             }
         }
         else
         {
             std::copy(c, c + len, std::back_inserter(body));
         }
-        return {_headerReceived, _headerParsed, body.size()};
     }
 
     bool parse()
@@ -83,7 +84,7 @@ public:
                     size_t to = s.find(' ', from);
                     if(to == std::string::npos) return false;
                     path = s.substr(from, to - from);
-                    from = to + (1 + 4 + 1); // skip " HTTP/"
+                    from = to + 6; // skip " HTTP/" fragment
                     state = PARSE_VERSION;
                     break;
                 }
@@ -111,6 +112,11 @@ public:
                     std::string val = trim(line.substr(cto + 1));
                     std::transform(key.begin(), key.end(), key.begin(), ::tolower);
                     headers[key] = val;
+                    if(key == "content-length")
+                    {
+                        std::from_chars(val.data(), val.data() + val.size(), _expectedBodySize);
+                        if(_expectedBodySize > 0) body.reserve(std::min(_expectedBodySize, 128ul * 1024));
+                    }
                     from = to + 2;
                     break;
                 }
@@ -145,7 +151,13 @@ public:
     {
         return _headerParsed;
     }
+
+    bool bodyReceived() const
+    {
+        return body.size() == _expectedBodySize;
+    }
 private:
+    size_t _expectedBodySize = 0;
     bool _headerReceived = false;
     bool _headerParsed = false;
 
