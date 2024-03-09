@@ -35,5 +35,5 @@ jobs:
         with:
           name: ${{ matrix.target }}-${{ env.build_sha }}
           path: |
-            .build/${{ matrix.target }}/server
-            .build/${{ matrix.target }}/client
+            ./build/${{ matrix.target }}/server
+            ./build/${{ matrix.target }}/client
