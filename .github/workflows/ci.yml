@@ -4,7 +4,7 @@ on:
   push:
 
 jobs:
-  build-project:
+  build:
     name: Build Project
     runs-on: ubuntu-latest
     steps:
@@ -15,16 +15,16 @@ jobs:
         uses: threeal/cmake-action@v1.3.0
 
       - name: Generate Debug Project
-        runs: cmake -S . -D CMAKE_BUILD_TYPE=Debug -B ./build/Debug
+        run: cmake -S . -D CMAKE_BUILD_TYPE=Debug -B ./build/Debug
 
       - name: Build Debug Project
-        runs: cmake --build ./build/Debug
+        run: cmake --build ./build/Debug
 
       - name: Generate Release Project
-        runs: cmake -S . -D CMAKE_BUILD_TYPE=Release -B ./build/Release
+        run: cmake -S . -D CMAKE_BUILD_TYPE=Release -B ./build/Release
 
       - name: Build Release Project
-        runs: cmake --build ./build/Release
+        run: cmake --build ./build/Release
 
 #      - name: Test Project
 #        runs: ctest --test-dir build/Debug
