@@ -25,7 +25,7 @@ public:
     virtual ~TcpServer()
     {
         debug("TcpServer::close", _s);
-        if(_s >= 0) ::close(_s);
+        if(_s >= 0) Socket::close(_s);
     }
 
     virtual void handle(sock_t s, uint32_t events) override
@@ -37,6 +37,7 @@ public:
                 sockaddr_in addr;
                 sock_t as = Socket::accept(_s, addr);
                 if(as <= 0) return;
+                //_loop->add(as, EPOLLIN | EPOLLPRI | EPOLLET, this);
                 _loop->add(as, EPOLLIN | EPOLLPRI, this);
                 Protocol::Status status = _protocol->onConnect(as);
                 if(status == Protocol::CLOSE || status == Protocol::ERROR)
@@ -82,7 +83,7 @@ private:
         debug("TcpServer::close", s);
         _loop->del(s);
         _protocol->onDisconnect(s);
-        ::close(s);
+        Socket::close(s);
     }
 
     const char * _addr;

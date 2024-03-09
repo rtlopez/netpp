@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <cstring>
 #include <string>
@@ -84,14 +85,26 @@ public:
         std::memset(&addr, 0, sizeof(addr));
 
         sock_t afd = ::accept(fd, (sockaddr *)&addr, &addr_len);
-
         debug("Socket::accept", fd, afd, errno);
 
         if (errno == EAGAIN) return 0;
-        
         if (afd < 0) throw SocketException(errno, "accept() failed");
 
+        int status = ::fcntl(afd, F_SETFL, ::fcntl(afd, F_GETFL, 0) | O_NONBLOCK);
+        debug("Socket::fcntl", fd, afd, errno);
+        if (status < 0) throw SocketException(errno, "fcntl() failed");
+
         return afd;
+    }
+
+    static int close(sock_t fd)
+    {
+        int ret = ::close(fd);
+        if(ret == -1)
+        {
+            if (errno == EBADF) throw SocketException(errno, "close() failed");
+        }
+        return 0;
     }
 
     static const std::string getpeername(sock_t fd)

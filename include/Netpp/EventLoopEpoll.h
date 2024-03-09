@@ -29,7 +29,7 @@ public:
     virtual ~EventLoopEpoll()
     {
         debug("EventLoopEpoll::close", _fd);
-        if(_fd >= 0) ::close(_fd);
+        if(_fd >= 0) Socket::close(_fd);
     }
 
     virtual void add(sock_t fd, uint32_t events, EventLoopHandler* handler) override

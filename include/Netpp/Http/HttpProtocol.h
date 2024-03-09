@@ -93,13 +93,13 @@ private:
         res.headers["content-length"] = std::to_string(len);
         const std::string headers = res.str();
         ssize_t slen = Socket::send(s, headers.c_str(), headers.size(), 0);
-        std::cout << "[HTTP] sent headers " << slen << ' ' << errno << ' ' << strerror(errno) << "\n";
+        std::cout << "[HTTP] sent headers " << slen << ' ' << errno << ' ' << ::strerror(errno) << "\n";
     }
 
     void sendBody(sock_t s, const char * content, size_t len)
     {
         ssize_t slen = Socket::send(s, content, len, 0);
-        std::cout << "[HTTP] sent body " << slen << ' ' << errno << ' ' << strerror(errno) << "\n";
+        std::cout << "[HTTP] sent body " << slen << ' ' << errno << ' ' << ::strerror(errno) << "\n";
     }
 
     std::map<sock_t, std::shared_ptr<HttpRequest>> _requests;

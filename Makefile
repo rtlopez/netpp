@@ -1,6 +1,6 @@
 CXXFLAGS=-Wall -std=c++17 -O0 -g3 -Iinclude/
 LDFLAGS=
-DEPS=$(shell find include/ -name *.h) Makefile
+DEPS=$(shell find include/ -name *.h)
 SRCS=$(wildcard src/*.cpp)
 OBJS=$(SRCS:.cpp=.o)
 TARGET_S=server
