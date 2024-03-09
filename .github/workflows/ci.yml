@@ -7,6 +7,9 @@ jobs:
   build:
     name: Build Project
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: ['Debug', 'Release']
     steps:
       - name: Checkout
         uses: actions/checkout@v4.1.1
@@ -14,17 +17,23 @@ jobs:
       - name: Configure Project
         uses: threeal/cmake-action@v1.3.0
 
-      - name: Generate Debug Project
-        run: cmake -S . -D CMAKE_BUILD_TYPE=Debug -B ./build/Debug
+      - name: Extract Version
+        run: |
+          echo "build_name=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          echo "build_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+          echo "build_tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          echo "build_sha=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_ENV
 
-      - name: Build Debug Project
-        run: cmake --build ./build/Debug
+      - name: Generate Project
+        run: cmake -S . -D CMAKE_BUILD_TYPE=${{ matrix.target }} -B ./build/${{ matrix.target }}
 
-      - name: Generate Release Project
-        run: cmake -S . -D CMAKE_BUILD_TYPE=Release -B ./build/Release
+      - name: Build Project
+        run: cmake --build ./build/${{ matrix.target }}
 
-      - name: Build Release Project
-        run: cmake --build ./build/Release
-
-#      - name: Test Project
-#        runs: ctest --test-dir build/Debug
+      - name: Create Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-${{ env.build_sha }}
+          path: |
+            .build/${{ matrix.target }}/server
+            .build/${{ matrix.target }}/client
