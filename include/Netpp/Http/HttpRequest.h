@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <charconv>
 
 #include "Netpp/Http/HttpException.h"
 
@@ -108,8 +109,8 @@ public:
                     std::string line = s.substr(from, to - from);
                     size_t cto = line.find(':');
                     if(cto == std::string::npos) return false;
-                    std::string key = trim(line.substr(0, cto));
-                    std::string val = trim(line.substr(cto + 1));
+                    std::string key = _trim(line.substr(0, cto));
+                    std::string val = _trim(line.substr(cto + 1));
                     std::transform(key.begin(), key.end(), key.begin(), ::tolower);
                     headers[key] = val;
                     if(key == "content-length")
@@ -161,7 +162,7 @@ private:
     bool _headerReceived = false;
     bool _headerParsed = false;
 
-    static std::string trim(std::string str)
+    static std::string _trim(std::string str)
     {
         str.erase(str.find_last_not_of(' ') + 1); // suffixing spaces
         str.erase(0, str.find_first_not_of(' ')); // prefixing spaces

@@ -8,6 +8,19 @@ add_compile_options(-Wall -Wextra)
 
 include_directories(include/)
 
+# server example
 add_executable(server src/server.cpp)
 
+# client example
 add_executable(client src/client.cpp)
+
+## unit tests
+## https://cliutils.gitlab.io/modern-cmake/chapters/testing.html
+
+#if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+    include(CTest)
+#endif()
+
+#if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTING)
+    add_subdirectory(tests)
+#endif()
