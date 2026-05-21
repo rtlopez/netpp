@@ -12,10 +12,10 @@ jobs:
         target: ['Debug', 'Release']
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0
+        uses: actions/checkout@v6
 
       - name: Configure Project
-        uses: threeal/cmake-action@v2.1
+        uses: threeal/cmake-action@v2.1.0
 
       - name: Extract Version
         run: |
@@ -31,7 +31,7 @@ jobs:
         run: cmake --build ./build/${{ matrix.target }}
 
       - name: Create Artifact
-        uses: actions/upload-artifact@v7.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ matrix.target }}-${{ env.build_sha }}
           path: |
