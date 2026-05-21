@@ -2,30 +2,23 @@
 
 #include <string>
 
-namespace Netpp
+namespace Netpp::Http
 {
 
-namespace Http
-{
-
-class HttpException
+class HttpException : public std::runtime_error
 {
 public:
-    explicit HttpException(int code): _code(code) {}
-    virtual const char * what() const noexcept
-    {
-        std::string msg{"Http Error "};
-        msg += std::to_string(_code);
-        return msg.c_str();
-    }
-    int code() const
-    {
-        return _code;
-    }
+  explicit HttpException(int code) : std::runtime_error("Http Error " + std::to_string(code)), _code(code)
+  {
+  }
+
+  int code() const
+  {
+    return _code;
+  }
+
 private:
-    int _code;
+  int _code;
 };
 
-}
-
-}
+} // namespace Netpp::Http
