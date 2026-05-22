@@ -1,5 +1,9 @@
 #pragma once
 
+#include <memory>
+#include <unordered_map>
+
+#include "Netpp/Connection.h"
 #include "Netpp/EventLoop.h"
 #include "Netpp/EventLoopHandler.h"
 #include "Netpp/NetppDebug.h"
@@ -47,6 +51,7 @@ public:
         }
         //_loop->add(as, EPOLLIN | EPOLLPRI | EPOLLET, this);
         _loop->add(as, EPOLLIN | EPOLLPRI, this);
+        _connections[as] = std::make_shared<Connection>(as);
         Protocol::Status status = _protocol->onConnect(as);
         if (status == Protocol::CLOSE || status == Protocol::ERROR)
         {
@@ -75,6 +80,7 @@ public:
       try
       {
         debug("TcpServer::handle", "recv", s, events);
+        auto conn = _connections[s];
         Protocol::Status status = _protocol->onReceive(s);
         if (status == Protocol::CLOSE || status == Protocol::ERROR)
         {
@@ -100,7 +106,7 @@ private:
     debug("TcpServer::close", s);
     _loop->del(s);
     _protocol->onDisconnect(s);
-    Socket::close(s);
+    _connections.erase(s);
   }
 
   const char *_addr;
@@ -108,6 +114,7 @@ private:
   EventLoop *_loop;
   Protocol *_protocol;
   sock_t _s;
+  std::unordered_map<sock_t, std::shared_ptr<Connection>> _connections;
 };
 
 } // namespace Netpp
