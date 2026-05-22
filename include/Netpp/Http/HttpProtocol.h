@@ -33,9 +33,9 @@ public:
 
   Status onDisconnect(sock_t s) override
   {
-    _requests.erase(s);
     std::string ip = Socket::getpeername(s);
     std::cout << "[HTTP] " << ip << " disconnected\n";
+    _requests.erase(s);
     return Protocol::OK;
   }
 
@@ -61,7 +61,7 @@ public:
 
     std::cout << std::string(buff, len);
 
-    std::shared_ptr<HttpRequest> req = _requests[s];
+    auto req = _requests[s];
     try
     {
       req->receive(buff, len);
