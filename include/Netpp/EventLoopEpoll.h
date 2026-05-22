@@ -1,7 +1,7 @@
 #pragma once
 
 #include <sys/epoll.h>
-#include <map>
+#include <unordered_map>
 
 #include "EventLoop.h"
 #include "EventLoopHandler.h"
@@ -12,103 +12,121 @@
 namespace Netpp
 {
 
-class EventLoopEpoll: public EventLoop
+class EventLoopEpoll : public EventLoop
 {
 public:
-    EventLoopEpoll(): _fd(-1), _running(true), _timeout(10000)
+  EventLoopEpoll() : _fd(-1), _running(true), _timeout(10000)
+  {
+    sock_t fd = ::epoll_create1(0);
+
+    debug("EventLoopEpoll", fd);
+
+    if (fd < 0)
     {
-        sock_t fd = ::epoll_create1(0);
-        
-        debug("EventLoopEpoll::init", fd);
-
-        if (fd < 0) throw EventLoopException(errno, "epoll_create1() failed");
-
-        _fd = fd;
+      throw EventLoopException(errno, "epoll_create1() failed");
     }
 
-    virtual ~EventLoopEpoll()
+    _fd = fd;
+  }
+
+  virtual ~EventLoopEpoll()
+  {
+    debug("~EventLoopEpoll", _fd);
+    if (_fd >= 0)
     {
-        debug("EventLoopEpoll::close", _fd);
-        if(_fd >= 0) Socket::close(_fd);
+      Socket::close(_fd);
+    }
+  }
+
+  void add(sock_t fd, uint32_t events, EventLoopHandler *handler) override
+  {
+    if (!_fd)
+    {
+      throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
 
-    virtual void add(sock_t fd, uint32_t events, EventLoopHandler* handler) override
+    debug("EventLoopEpoll", "add", fd, events);
+
+    epoll_event event = {events, {.fd = fd}};
+
+    if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &event) < 0)
     {
-        if(!_fd) throw EventLoopException(-1, "EventLoopEpoll not initialized");
+      throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_ADD) failed");
+    }
 
-        debug("EventLoopEpoll::add", fd, events);
+    _handlers[fd] = handler;
+  }
 
-        epoll_event event = {events, {.fd = fd}};
+  void del(sock_t fd) override
+  {
+    if (!_fd)
+    {
+      throw EventLoopException(errno, "EventLoopEpoll not initialized");
+    }
 
-        if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &event) < 0)
+    debug("EventLoopEpoll", "del", fd);
+
+    if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, NULL) < 0)
+    {
+      throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_DEL) failed");
+    }
+
+    _handlers.erase(fd);
+  }
+
+  void run() override
+  {
+    if (!_fd)
+    {
+      throw EventLoopException(errno, "EventLoopEpoll not initialized");
+    }
+
+    while (_running)
+    {
+      int ret = ::epoll_wait(_fd, _events, MAX_EVENTS, _timeout);
+      if (ret == -1)
+      {
+        debug("EventLoopEpoll", "run", "error", ret, errno);
+        if (errno == EINTR)
         {
-            throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_ADD) failed");
+          continue; // interrupted, try again
         }
+        throw EventLoopException(errno, "epoll_wait() failed");
+      }
 
-        _handlers[fd] = handler;
+      if (ret == 0)
+      {
+        // `epoll_wait` reached its timeout
+        debug("EventLoopEpoll", "run", "timeout", ret);
+        continue;
+      }
+
+      for (int i = 0; i < ret; i++)
+      {
+        handle(_events[i]);
+      }
     }
+  }
 
-    virtual void del(sock_t fd) override
-    {
-        if(!_fd) throw EventLoopException(errno, "EventLoopEpoll not initialized");
+  void handle(const epoll_event &ev)
+  {
+    debug("EventLoopEpoll", "handle", ev.data.fd, ev.events);
+    EventLoopHandler *handler = _handlers[ev.data.fd];
+    handler->handle(ev.data.fd, ev.events);
+  }
 
-        debug("EventLoopEpoll::del", fd);
-
-        if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, NULL) < 0)
-        {
-            throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_DEL) failed");
-        }
-
-        _handlers.erase(fd);
-    }
-
-    virtual void run() override
-    {
-        if(!_fd) throw EventLoopException(errno, "EventLoopEpoll not initialized");
-
-        while (_running)
-        {
-            int ret = ::epoll_wait(_fd, _events, MAX_EVENTS, _timeout);
-            if (ret == -1)
-            {
-                debug("EventLoopEpoll::run", "error", ret, errno);
-                if (errno == EINTR) continue; // interrupted, try again
-                throw EventLoopException(errno, "epoll_wait() failed");
-            }
-
-            if (ret == 0)
-            {
-                // `epoll_wait` reached its timeout
-                debug("EventLoopEpoll::run", "timeout", ret);
-                continue;
-            }
-
-            for (int i = 0; i < ret; i++)
-            {
-                handle(_events[i]);
-            }
-        }
-    }
-
-    void handle(const epoll_event& ev)
-    {
-        debug("EventLoopEpoll::run", "handle", ev.data.fd, ev.events);
-        EventLoopHandler* handler = _handlers[ev.data.fd];
-        handler->handle(ev.data.fd, ev.events);
-    }
-
-    void stop()
-    {
-        _running = false;
-    }
+  void stop()
+  {
+    _running = false;
+  }
 
 private:
-    static const size_t MAX_EVENTS = 32;
-    sock_t _fd;
-    bool _running;
-    int _timeout;
-    epoll_event _events[MAX_EVENTS];
-    std::map<sock_t, EventLoopHandler*> _handlers;
+  static const size_t MAX_EVENTS = 32;
+  sock_t _fd;
+  bool _running;
+  int _timeout;
+  epoll_event _events[MAX_EVENTS];
+  std::unordered_map<sock_t, EventLoopHandler *> _handlers;
 };
 
-}
+} // namespace Netpp

@@ -23,7 +23,7 @@ public:
   {
   }
 
-  virtual Status onConnect(sock_t s)
+  Status onConnect(sock_t s) override
   {
     _requests[s] = std::make_shared<HttpRequest>();
     std::string ip = Socket::getpeername(s);
@@ -31,7 +31,7 @@ public:
     return Protocol::OK;
   }
 
-  virtual Status onDisconnect(sock_t s)
+  Status onDisconnect(sock_t s) override
   {
     _requests.erase(s);
     std::string ip = Socket::getpeername(s);
@@ -39,7 +39,7 @@ public:
     return Protocol::OK;
   }
 
-  virtual Status onReceive(sock_t s)
+  Status onReceive(sock_t s) override
   {
     char buff[1024];
     ssize_t len = Socket::recv(s, buff, sizeof(buff), 0);

@@ -22,11 +22,14 @@ public:
     _s = s;
     _loop->add(s, EPOLLIN | EPOLLPRI, this);
   }
+
   virtual ~TcpServer()
   {
     debug("TcpServer::close", _s);
     if (_s >= 0)
+    {
       Socket::close(_s);
+    }
   }
 
   virtual void handle(sock_t s, uint32_t events) override

@@ -8,7 +8,7 @@ namespace Netpp
 class EventLoopHandler
 {
 public:
-    virtual void handle(sock_t s, uint32_t events) = 0;
+  virtual void handle(sock_t s, uint32_t events) = 0;
 };
 
-}
+} // namespace Netpp

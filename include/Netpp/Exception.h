@@ -1,48 +1,49 @@
 #pragma once
 
-#include <stdexcept>
 #include <cstring>
+#include <stdexcept>
 
 namespace Netpp
 {
 
-class ErrnoException: public std::runtime_error
+class ErrnoException : public std::runtime_error
 {
 public:
-    ErrnoException(int erno, const std::string& msg): std::runtime_error(msg), _msg(msg), _errno(erno)
-    {
-        _msg += ": (";
-        _msg += std::to_string(errNo());
-        _msg += ") ";
-        _msg += errStr();
-    }
-    int errNo() const
-    {
-        return _errno;
-    }
-    const char * errStr() const
-    {
-        return std::strerror(_errno);
-    }
-    virtual const char * what() const noexcept override
-    {
-        return _msg.c_str();
-    }
+  ErrnoException(int erno, const std::string msg)
+      : std::runtime_error(msg + ": (" + std::to_string(erno) + ":" + std::to_string(erno) + ") " +
+                           std::strerror(erno)),
+        _errno(erno)
+  {
+  }
+
+  int errNo() const
+  {
+    return _errno;
+  }
+
+  const char *errStr() const
+  {
+    return std::strerror(_errno);
+  }
+
 private:
-    std::string _msg;
-    int _errno;
+  int _errno;
 };
 
-class SocketException: public ErrnoException
+class SocketException : public ErrnoException
 {
 public:
-    SocketException(int eno, const std::string& msg): ErrnoException(eno, msg) {}
+  SocketException(int eno, const std::string &msg) : ErrnoException(eno, msg)
+  {
+  }
 };
 
-class EventLoopException: public ErrnoException
+class EventLoopException : public ErrnoException
 {
 public:
-    EventLoopException(int eno, const std::string& msg): ErrnoException(eno, msg) {}
+  EventLoopException(int eno, const std::string &msg) : ErrnoException(eno, msg)
+  {
+  }
 };
 
-}
+} // namespace Netpp
