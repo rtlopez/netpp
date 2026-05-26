@@ -52,7 +52,7 @@ public:
         //_loop->add(as, EPOLLIN | EPOLLPRI | EPOLLET, this);
         _loop->add(as, EPOLLIN | EPOLLPRI, this);
         _connections[as] = std::make_shared<Connection>(as);
-        Protocol::Status status = _protocol->onConnect(as);
+        Protocol::Status status = _protocol->onConnect(_connections[as]);
         if (status == Protocol::CLOSE || status == Protocol::ERROR)
         {
           close(as);
@@ -80,8 +80,12 @@ public:
       try
       {
         debug("TcpServer::handle", "recv", s, events);
-        auto conn = _connections[s];
-        Protocol::Status status = _protocol->onReceive(s);
+        auto it = _connections.find(s);
+        if (it == _connections.end())
+        {
+          return;
+        }
+        Protocol::Status status = _protocol->onReceive(it->second);
         if (status == Protocol::CLOSE || status == Protocol::ERROR)
         {
           close(s);
@@ -104,9 +108,14 @@ private:
   void close(sock_t s)
   {
     debug("TcpServer::close", s);
+    auto it = _connections.find(s);
+    if (it == _connections.end())
+    {
+      return;
+    }
     _loop->del(s);
-    _protocol->onDisconnect(s);
-    _connections.erase(s);
+    _protocol->onDisconnect(it->second);
+    _connections.erase(it);
   }
 
   const char *_addr;
@@ -114,7 +123,7 @@ private:
   EventLoop *_loop;
   Protocol *_protocol;
   sock_t _s;
-  std::unordered_map<sock_t, std::shared_ptr<Connection>> _connections;
+  std::unordered_map<sock_t, ConnectionPtr> _connections;
 };
 
 } // namespace Netpp

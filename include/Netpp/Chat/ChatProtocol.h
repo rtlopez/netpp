@@ -6,7 +6,6 @@
 #include <utility>
 
 #include "Netpp/Protocol.h"
-#include "Netpp/Socket.h"
 
 namespace Netpp::Chat
 {
@@ -18,38 +17,38 @@ public:
   {
   }
 
-  Status onConnect(sock_t s) override
+  Status onConnect(ConnectionPtr conn) override
   {
-    _clients.insert(s);
+    _clients.insert(conn);
 
     const char buff[] = "Welcome to the chat room\n";
     ssize_t len = sizeof(buff) - 1;
-    ssize_t slen = Socket::send(s, buff, len, 0);
+    ssize_t slen = conn->send(buff, len, 0);
     if (slen != len)
     {
       std::cout << "[CHAT] FIXME: not all data resent\n";
     }
 
-    std::string ip = std::move(Socket::getpeername(s));
+    std::string ip = std::move(conn->getPeerName());
     std::cout << "[CHAT] " << ip << " joined room\n";
 
     return Protocol::OK;
   }
 
-   Status onDisconnect(sock_t s) override
+   Status onDisconnect(ConnectionPtr conn) override
   {
-    _clients.erase(s);
+    _clients.erase(conn);
 
-    std::string ip = std::move(Socket::getpeername(s));
+    std::string ip = std::move(conn->getPeerName());
     std::cout << "[CHAT] " << ip << " left room\n";
 
     return Protocol::OK;
   }
 
-  Status onReceive(sock_t s) override
+  Status onReceive(ConnectionPtr conn) override
   {
     char buff[1024];
-    ssize_t len = Socket::recv(s, buff, sizeof(buff), 0);
+    ssize_t len = conn->recv(buff, sizeof(buff), 0);
 
     if (len < 0)
     {
@@ -67,13 +66,13 @@ public:
       return Protocol::CLOSE;
     }
 
-    for (sock_t c : _clients)
+    for (const ConnectionPtr &c : _clients)
     {
-      if (c == s)
+      if (c == conn)
       {
         continue;
       }
-      ssize_t slen = Socket::send(c, buff, len, 0);
+      ssize_t slen = c->send(buff, len, 0);
       if (slen != len)
       {
         std::cout << "[CHAT] FIXME: not all data resent\n";
@@ -96,7 +95,7 @@ public:
   }
 
 private:
-  std::set<sock_t> _clients;
+  std::set<ConnectionPtr> _clients;
 };
 
 } // namespace Netpp::Chat

@@ -5,7 +5,6 @@
 #include <utility>
 
 #include "Netpp/Protocol.h"
-#include "Netpp/Socket.h"
 
 namespace Netpp::Echo
 {
@@ -17,24 +16,24 @@ public:
   {
   }
 
-  Status onConnect(sock_t s) override
+  Status onConnect(ConnectionPtr conn) override
   {
-    std::string ip = std::move(Socket::getpeername(s));
+    std::string ip = std::move(conn->getPeerName());
     std::cout << "[ECHO] conn accept: " << ip << "\n";
     return Protocol::OK;
   }
 
-  Status onDisconnect(sock_t s) override
+  Status onDisconnect(ConnectionPtr conn) override
   {
-    std::string ip = std::move(Socket::getpeername(s));
+    std::string ip = std::move(conn->getPeerName());
     std::cout << "[ECHO] conn close: " << ip << "\n";
     return Protocol::OK;
   }
 
-  Status onReceive(sock_t s) override
+  Status onReceive(ConnectionPtr conn) override
   {
     char buff[1024];
-    ssize_t len = Socket::recv(s, buff, sizeof(buff), 0);
+    ssize_t len = conn->recv(buff, sizeof(buff), 0);
 
     if (len < 0)
     {
@@ -52,7 +51,7 @@ public:
       return Protocol::CLOSE;
     }
 
-    ssize_t slen = Socket::send(s, buff, len, 0);
+    ssize_t slen = conn->send(buff, len, 0);
 
     if (slen != len)
     {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Socket.h"
+#include "Connection.h"
 
 namespace Netpp
 {
@@ -14,9 +14,9 @@ public:
     ERROR,
     CLOSE,
   };
-  virtual Status onConnect(sock_t s) = 0;
-  virtual Status onReceive(sock_t s) = 0;
-  virtual Status onDisconnect(sock_t s) = 0;
+  virtual Status onConnect(ConnectionPtr conn) = 0;
+  virtual Status onReceive(ConnectionPtr conn) = 0;
+  virtual Status onDisconnect(ConnectionPtr conn) = 0;
 };
 
 } // namespace Netpp

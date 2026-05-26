@@ -48,4 +48,6 @@ private:
   sock_t _s;
 };
 
+using ConnectionPtr = std::shared_ptr<Connection>;
+
 } // namespace Netpp

@@ -11,7 +11,6 @@
 #include "Netpp/Http/HttpRequest.h"
 #include "Netpp/Http/HttpResponse.h"
 #include "Netpp/Protocol.h"
-#include "Netpp/Socket.h"
 
 namespace Netpp::Http
 {
@@ -23,26 +22,29 @@ public:
   {
   }
 
-  Status onConnect(sock_t s) override
+  Status onConnect(ConnectionPtr conn) override
   {
+    int s = conn->getId();
     _requests[s] = std::make_shared<HttpRequest>();
-    std::string ip = Socket::getpeername(s);
+    std::string ip = conn->getPeerName();
     std::cout << "[HTTP] " << ip << " connected\n";
     return Protocol::OK;
   }
 
-  Status onDisconnect(sock_t s) override
+  Status onDisconnect(ConnectionPtr conn) override
   {
-    std::string ip = Socket::getpeername(s);
+    int s = conn->getId();
+    std::string ip = conn->getPeerName();
     std::cout << "[HTTP] " << ip << " disconnected\n";
     _requests.erase(s);
     return Protocol::OK;
   }
 
-  Status onReceive(sock_t s) override
+  Status onReceive(ConnectionPtr conn) override
   {
+    int s = conn->getId();
     char buff[1024];
-    ssize_t len = Socket::recv(s, buff, sizeof(buff), 0);
+    ssize_t len = conn->recv(buff, sizeof(buff), 0);
 
     if (len < 0)
     {
@@ -70,25 +72,25 @@ public:
       {
         const char *content =
             "<html>\n<head><title>Not Found</title></head>\n<body><h1>Not Found</h1></body>\n</html>\n";
-        size_t len = strlen(content);
-        sendHeaders(s, req, 404, len);
-        sendBody(s, content, len);
+        size_t len = std::strlen(content);
+        sendHeaders(conn, req, 404, len);
+        sendBody(conn, content, len);
       }
     }
     catch (const HttpException &e)
     {
       const char *content =
           "<html>\n<head><title>Invalid request</title></head>\n<body><h1>Invalid Request</h1></body>\n</html>\n";
-      size_t len = strlen(content);
-      sendHeaders(s, req, e.code(), len);
-      sendBody(s, content, len);
+      size_t len = std::strlen(content);
+      sendHeaders(conn, req, e.code(), len);
+      sendBody(conn, content, len);
       return Protocol::CLOSE;
     }
     return Protocol::OK;
   }
 
 private:
-  void sendHeaders(sock_t s, std::shared_ptr<HttpRequest> req, int status, size_t len)
+  void sendHeaders(ConnectionPtr conn, std::shared_ptr<HttpRequest> req, int status, size_t len)
   {
     HttpResponse res;
     res.status = status;
@@ -96,17 +98,17 @@ private:
     res.headers["content-type"] = "text/html";
     res.headers["content-length"] = std::to_string(len);
     const std::string headers = res.str();
-    ssize_t slen = Socket::send(s, headers.c_str(), headers.size(), 0);
+    ssize_t slen = conn->send(headers.c_str(), headers.size(), 0);
     std::cout << "[HTTP] sent headers " << slen << ' ' << errno << ' ' << ::strerror(errno) << "\n";
   }
 
-  void sendBody(sock_t s, const char *content, size_t len)
+  void sendBody(ConnectionPtr conn, const char *content, size_t len)
   {
-    ssize_t slen = Socket::send(s, content, len, 0);
+    ssize_t slen = conn->send(content, len, 0);
     std::cout << "[HTTP] sent body " << slen << ' ' << errno << ' ' << ::strerror(errno) << "\n";
   }
 
-  std::map<sock_t, std::shared_ptr<HttpRequest>> _requests;
+  std::map<int, std::shared_ptr<HttpRequest>> _requests;
 };
 
 } // namespace Netpp::Http
