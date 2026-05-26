@@ -55,7 +55,7 @@ public:
       }
     }
 
-    for (size_t i = 0; i < 2; i++)
+    for (size_t i = 0; i < 2 && !str.empty(); i++)
     {
       auto c = str[str.size() - 1];
       if (c == '\n' || c == '\r')

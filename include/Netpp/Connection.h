@@ -16,10 +16,10 @@ public:
   virtual ~Connection()
   {
     debug("~Connection", _s);
-    if (_s)
+    if (_s >= 0)
     {
       Socket::close(_s);
-      _s = 0;
+      _s = -1;
     }
   }
 

@@ -1,5 +1,5 @@
-#include <iostream>
-#include <signal.h>
+#include <csignal>
+#include <cstdio>
 
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/Http/HttpProtocol.h"
@@ -9,13 +9,13 @@
 
 void sigpipe_handler(int signum)
 {
-  printf("Caught signal SIGPIPE %d\n", signum);
+  std::printf("Caught signal SIGPIPE %d\n", signum);
 }
 
 
 int main()
 {
-  ::signal(SIGPIPE, sigpipe_handler);
+  std::signal(SIGPIPE, sigpipe_handler);
   
   Netpp::EventLoopEpoll loop;
 

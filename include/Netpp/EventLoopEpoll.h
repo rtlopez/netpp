@@ -43,7 +43,7 @@ public:
   void add(sock_t fd, EventLoopHandler *handler) override
   {
     uint32_t events = EPOLLIN | EPOLLPRI;
-    if (!_fd)
+    if (_fd < 0)
     {
       throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
@@ -62,7 +62,7 @@ public:
 
   void del(sock_t fd) override
   {
-    if (!_fd)
+    if (_fd < 0)
     {
       throw EventLoopException(errno, "EventLoopEpoll not initialized");
     }
@@ -79,7 +79,7 @@ public:
 
   void run() override
   {
-    if (!_fd)
+    if (_fd < 0)
     {
       throw EventLoopException(errno, "EventLoopEpoll not initialized");
     }

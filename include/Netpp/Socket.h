@@ -94,15 +94,16 @@ public:
     std::memset(&addr, 0, sizeof(sockaddr_in));
 
     sock_t afd = ::accept(fd, (sockaddr *)&addr, &addr_len);
-    debug("Socket::accept", fd, afd, errno);
+    int err = errno;
+    debug("Socket::accept", fd, afd, err);
 
-    if (errno == EAGAIN)
-    {
-      return 0;
-    }
     if (afd < 0)
     {
-      throw SocketException(errno, "accept() failed");
+      if (err == EAGAIN)
+      {
+        return 0;
+      }
+      throw SocketException(err, "accept() failed");
     }
 
     int status = ::fcntl(afd, F_SETFL, ::fcntl(afd, F_GETFL, 0) | O_NONBLOCK);
