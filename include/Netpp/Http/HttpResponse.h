@@ -25,7 +25,7 @@ public:
     }
     ss << "\r\n";
 
-    return ss.str();
+    return std::move(ss).str();
   }
 
   static const char *codeToMessage(int code)
