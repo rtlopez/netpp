@@ -19,7 +19,7 @@ public:
     std::ostringstream ss;
 
     ss << "HTTP/" << version << ' ' << status << ' ' << codeToMessage(status) << "\r\n";
-    for (auto [key, val] : headers)
+    for (const auto& [key, val] : headers)
     {
       ss << key << ": " << val << "\r\n";
     }
