@@ -121,5 +121,57 @@ class ServerTestCase(unittest.TestCase):
             self.assertEqual(data, b"hello\n")
 
 
+class SignalTestCase(unittest.TestCase):
+    """Test that the server shuts down gracefully on signals."""
+
+    def _start_server(self):
+        path = os.path.realpath(SERVER_BIN)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Server binary not found: {path}")
+        proc = subprocess.Popen(
+            [path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        for port in (HTTP_PORT, CHAT_PORT, ECHO_PORT):
+            if not _wait_for_port(port):
+                proc.kill()
+                proc.wait()
+                raise RuntimeError(f"Server did not start listening on port {port}")
+        return proc
+
+    def _assert_graceful_shutdown(self, proc, sig):
+        proc.send_signal(sig)
+        try:
+            returncode = proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            self.fail(f"Server did not exit within 3s after {sig.name}")
+        finally:
+            proc.stdout.close()
+        self.assertEqual(returncode, 0, f"Server exited with code {returncode} after {sig.name}")
+
+    def test_sigint(self):
+        proc = self._start_server()
+        self._assert_graceful_shutdown(proc, signal.SIGINT)
+
+    def test_sigterm(self):
+        proc = self._start_server()
+        self._assert_graceful_shutdown(proc, signal.SIGTERM)
+
+    def test_shutdown(self):
+        proc = self._start_server()
+        # verify server is functional before shutdown
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(RECV_TIMEOUT)
+            s.connect((HOST, ECHO_PORT))
+            s.sendall(b"ping\n")
+            data = s.recv(1024)
+            self.assertEqual(data, b"ping\n")
+        # now shut down
+        self._assert_graceful_shutdown(proc, signal.SIGINT)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,7 @@ public:
     debug("~TcpServer", _s);
     if (_s >= 0)
     {
+      _loop->del(_s);
       Socket::close(_s);
     }
   }

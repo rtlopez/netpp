@@ -123,7 +123,7 @@ public:
     handler->handle(ev.data.fd);
   }
 
-  void stop()
+  void stop() override
   {
     _running = false;
   }

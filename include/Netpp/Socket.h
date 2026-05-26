@@ -119,11 +119,13 @@ public:
   static int close(sock_t fd)
   {
     int ret = ::close(fd);
+    int err = errno;
+    debug("Socket::close", fd, ret, err);
     if (ret == -1)
     {
-      if (errno == EBADF)
+      if (err == EBADF)
       {
-        throw SocketException(errno, "close() failed");
+        throw SocketException(err, "close() failed");
       }
     }
     return 0;
