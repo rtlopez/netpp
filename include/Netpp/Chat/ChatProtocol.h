@@ -1,8 +1,8 @@
 #pragma once
 
 #include <iostream>
-#include <unordered_set>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #include "Netpp/Protocol.h"
@@ -39,53 +39,32 @@ public:
     std::cout << "[CHAT] " << conn->getPeerName() << " left room\n";
   }
 
-  void onReceive(ConnectionPtr conn) override
+  void onReceive(DataEvent data) override
   {
-    char buff[1024];
-    ssize_t len = conn->recv(buff, sizeof(buff), 0);
-
-    if (len < 0)
-    {
-      std::cout << "[CHAT] data error: " << len << " " << errno << "\n";
-      if (errno == EAGAIN || errno == EWOULDBLOCK)
-      {
-        return;
-      }
-      conn->setError();
-      return;
-    }
-
-    if (len == 0)
-    {
-      std::cout << "[CHAT] empty data\n";
-      conn->setError();
-      return;
-    }
+    auto str = std::string(data.data.begin(), data.data.end());
 
     for (const ConnectionPtr &c : _clients)
     {
-      if (c == conn)
+      if (c != data.conn)
       {
-        continue;
-      }
-      ssize_t slen = c->send(buff, len, 0);
-      if (slen != len)
-      {
-        std::cout << "[CHAT] FIXME: not all data resent\n";
+        auto slen = c->send(str.c_str(), str.size(), 0);
+        if (slen != (ssize_t)str.size())
+        {
+          std::cout << "[CHAT] FIXME: not all data resent\n";
+        }
       }
     }
 
-    buff[len] = '\0';
-    if (buff[len - 1] == '\n')
+    for (size_t i = 0; i < 2; i++)
     {
-      buff[len - 1] = '\0';
-    }
-    if (buff[len - 2] == '\r')
-    {
-      buff[len - 2] = '\0';
+      auto c = str[str.size() - 1];
+      if (c == '\n' || c == '\r')
+      {
+        str.resize(str.size() - 1);
+      }
     }
 
-    std::cout << "[CHAT] new data: " << buff << "\n";
+    std::cout << "[CHAT] new data: " << str << "\n";
   }
 
 private:

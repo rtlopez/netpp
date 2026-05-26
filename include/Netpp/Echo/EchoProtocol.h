@@ -26,47 +26,27 @@ public:
     std::cout << "[ECHO] conn close: " << conn->getPeerName() << "\n";
   }
 
-  void onReceive(ConnectionPtr conn) override
+  void onReceive(DataEvent data) override
   {
-    char buff[1024];
-    ssize_t len = conn->recv(buff, sizeof(buff), 0);
+    auto str = std::string(data.data.begin(), data.data.end());
 
-    if (len < 0)
-    {
-      std::cout << "[ECHO] data error: " << len << " " << errno << "\n";
-      if (errno == EAGAIN || errno == EWOULDBLOCK)
-      {
-        return; // it is fine
-      }
-      conn->setError();
-      return;
-    }
+    auto slen = data.conn->send(str.c_str(), str.size(), 0);
 
-    if (len == 0)
-    {
-      std::cout << "[ECHO] empty data\n";
-      conn->setClosed();
-      return;
-    }
-
-    ssize_t slen = conn->send(buff, len, 0);
-
-    if (slen != len)
+    if (slen != (ssize_t)str.size())
     {
       std::cout << "[ECHO] FIXME: not all data resent\n";
     }
 
-    buff[len] = '\0';
-    if (buff[len - 1] == '\n')
+    for (size_t i = 0; i < 2; i++)
     {
-      buff[len - 1] = '\0';
-    }
-    if (buff[len - 2] == '\r')
-    {
-      buff[len - 2] = '\0';
+      auto c = str[str.size() - 1];
+      if (c == '\n' || c == '\r')
+      {
+        str.resize(str.size() - 1);
+      }
     }
 
-    std::cout << "[ECHO] new data: " << buff << "\n";
+    std::cout << "[ECHO] new data: " << str << "\n";
   }
 };
 

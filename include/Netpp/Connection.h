@@ -10,10 +10,12 @@ class Connection
 public:
   Connection(sock_t s) : _s(s)
   {
+    debug("Connection", _s);
   }
 
   virtual ~Connection()
   {
+    debug("~Connection", _s);
     if (_s)
     {
       Socket::close(_s);

@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include "Netpp/Connection.h"
+#include "Netpp/DataEvent.h"
 #include "Netpp/EventLoop.h"
 #include "Netpp/EventLoopHandler.h"
 #include "Netpp/NetppDebug.h"
@@ -20,7 +21,7 @@ public:
       : _addr(addr), _port(port), _loop(loop), _protocol(protocol), _s(-1)
   {
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
-    debug("TcpServer::init", s);
+    debug("TcpServer", s);
     Socket::bind(s, _addr, _port);
     Socket::listen(s, 100);
     _s = s;
@@ -29,7 +30,7 @@ public:
 
   virtual ~TcpServer()
   {
-    debug("TcpServer::close", _s);
+    debug("~TcpServer", _s);
     if (_s >= 0)
     {
       Socket::close(_s);
@@ -40,12 +41,11 @@ public:
   {
     try
     {
-      debug("TcpServer::handleError", "close", s);
       close(s);
     }
     catch (...)
     {
-      debug("TcpServer::handleError", "close", "exception", s);
+      debug("TcpServer::error", "exception", s);
     }
   }
 
@@ -55,57 +55,77 @@ public:
     {
       try
       {
-        debug("TcpServer::handle", "accept", s);
+        debug("TcpServer::accept", s);
         sockaddr_in addr;
         sock_t as = Socket::accept(_s, addr);
         if (as <= 0)
         {
+          debug("TcpServer::accept", "error", s, as, errno, ::strerror(errno));
           return;
         }
         _loop->add(as, this);
         auto conn = std::make_shared<Connection>(as);
         _connections[as] = conn;
         _protocol->onConnect(conn);
-        if (conn->hasError())
+        
+        if (conn->hasError() || conn->isClosed())
         {
-          debug("TcpServer::handle", "accept", "error", as);
-          close(as);
-        }
-        if (conn->isClosed())
-        {
-          debug("TcpServer::handle", "accept", "closed", as);
           close(as);
         }
       }
       catch (...)
       {
-        debug("TcpServer::handle", "accept", "exception", s);
+        debug("TcpServer::accept", "exception", s);
       }
     }
     else
     {
       try
       {
-        debug("TcpServer::handle", "recv", s);
         auto it = _connections.find(s);
         if (it != _connections.end())
         {
-          _protocol->onReceive(it->second);
-          if (it->second->hasError())
+          auto& conn = it->second;
+
+          DataEvent data{conn, std::vector<uint8_t>(4096)};
+          ssize_t len = conn->recv(reinterpret_cast<char *>(data.data.data()), data.data.size(), 0);
+          
+          debug("TcpServer::recv", _s, s, len);
+
+          if (len > 0)
           {
-            debug("TcpServer::handle", "recv", "error", s);
+            data.data.resize(len);
+            _protocol->onReceive(std::move(data));
+          }
+          else if (len == 0)
+          {
+            debug("TcpServer::disconnect", _s, s);
+            conn->setClosed();
+          }
+          else if(errno == EAGAIN || errno == EWOULDBLOCK)
+          {
+            // skip
+          }
+          else
+          {
+            debug("TcpServer::recv", "error", _s, s, len, errno, ::strerror(errno));
+            conn->setError();
+          }
+
+          if (conn->isClosed() || conn->hasError())
+          {
             close(s);
           }
-          if (it->second->isClosed())
-          {
-            debug("TcpServer::handle", "recv", "closed", s);
-            close(s);
-          }
+        }
+        else
+        {
+          debug("TcpServer::recv", "unknown connection", _s, s);
+          close(s);
         }
       }
       catch (...)
       {
-        debug("TcpServer::handle", "recv", "exception", s);
+        debug("TcpServer::recv", "exception", s);
         close(s);
       }
     }

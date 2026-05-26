@@ -10,6 +10,7 @@
 #include "Netpp/Http/HttpException.h"
 #include "Netpp/Http/HttpRequest.h"
 #include "Netpp/Http/HttpResponse.h"
+#include "Netpp/DataEvent.h"
 #include "Netpp/Protocol.h"
 
 namespace Netpp::Http
@@ -26,53 +27,35 @@ public:
   {
     int s = conn->getId();
     _requests[s] = std::make_shared<HttpRequest>();
-    std::cout << "[HTTP] " << conn->getPeerName() << " connected\n";
+    std::cout << "[HTTP] " << conn->getPeerName() << " " << s << " connected\n";
   }
 
   void onDisconnect(ConnectionPtr conn) override
   {
     int s = conn->getId();
-    std::cout << "[HTTP] " << conn->getPeerName() << " disconnected\n";
+    std::cout << "[HTTP] " << conn->getPeerName() << " " << s << " disconnected\n";
     _requests.erase(s);
   }
 
-  void onReceive(ConnectionPtr conn) override
+  void onReceive(DataEvent data) override
   {
-    int s = conn->getId();
-    char buff[1024];
-    ssize_t len = conn->recv(buff, sizeof(buff), 0);
+    int s = data.conn->getId();
 
-    if (len < 0)
-    {
-      std::cout << "[HTTP] data error: " << len << " " << errno << "\n";
-      if (errno == EAGAIN || errno == EWOULDBLOCK)
-      {
-        return; // it is fine
-      }
-      conn->setError();
-      return;
-    }
-
-    if (len == 0)
-    {
-      conn->setClosed();
-      return;
-    }
-
-    std::cout << std::string(buff, len);
+    std::cout << "[HTTP] " << s << " received(" << data.data.size() << "): " /* << std::string(data.data.begin(), data.data.end()) */ << "\n";
 
     auto req = _requests[s];
     try
     {
-      req->receive(buff, len);
+      req->receive(reinterpret_cast<const char *>(data.data.data()), data.data.size());
 
       if (req->headerParsed() && req->bodyReceived())
       {
         const char *content =
             "<html>\n<head><title>Not Found</title></head>\n<body><h1>Not Found</h1></body>\n</html>\n";
         size_t len = std::strlen(content);
-        sendHeaders(conn, req, 404, len);
-        sendBody(conn, content, len);
+        sendHeaders(data.conn, req, 404, len);
+        sendBody(data.conn, content, len);
+        data.conn->setClosed();
       }
     }
     catch (const HttpException &e)
@@ -80,9 +63,9 @@ public:
       const char *content =
           "<html>\n<head><title>Invalid request</title></head>\n<body><h1>Invalid Request</h1></body>\n</html>\n";
       size_t len = std::strlen(content);
-      sendHeaders(conn, req, e.code(), len);
-      sendBody(conn, content, len);
-      conn->setClosed();
+      sendHeaders(data.conn, req, e.code(), len);
+      sendBody(data.conn, content, len);
+      data.conn->setClosed();
       return;
     }
   }
