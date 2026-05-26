@@ -90,8 +90,8 @@ public:
 
   static int accept(sock_t fd, sockaddr_in &addr)
   {
-    socklen_t addr_len = sizeof(addr);
-    std::memset(&addr, 0, sizeof(addr));
+    socklen_t addr_len = sizeof(sockaddr_in);
+    std::memset(&addr, 0, sizeof(sockaddr_in));
 
     sock_t afd = ::accept(fd, (sockaddr *)&addr, &addr_len);
     debug("Socket::accept", fd, afd, errno);

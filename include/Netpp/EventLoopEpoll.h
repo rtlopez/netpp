@@ -9,6 +9,8 @@
 #include "NetppDebug.h"
 #include "Socket.h"
 
+// https://medium.com/@m-ibrahim.research/mastering-epoll-the-engine-behind-high-performance-linux-networking-85a15e6bde90
+
 namespace Netpp
 {
 
@@ -38,8 +40,9 @@ public:
     }
   }
 
-  void add(sock_t fd, uint32_t events, EventLoopHandler *handler) override
+  void add(sock_t fd, EventLoopHandler *handler) override
   {
+    uint32_t events = EPOLLIN | EPOLLPRI;
     if (!_fd)
     {
       throw EventLoopException(-1, "EventLoopEpoll not initialized");
@@ -112,7 +115,12 @@ public:
   {
     debug("EventLoopEpoll", "handle", ev.data.fd, ev.events);
     EventLoopHandler *handler = _handlers[ev.data.fd];
-    handler->handle(ev.data.fd, ev.events);
+    if (ev.events & (EPOLLERR | EPOLLHUP))
+    {
+      handler->handleError(ev.data.fd);
+      return;
+    }
+    handler->handle(ev.data.fd);
   }
 
   void stop()

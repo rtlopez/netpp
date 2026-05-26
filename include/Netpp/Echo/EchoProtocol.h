@@ -16,21 +16,17 @@ public:
   {
   }
 
-  Status onConnect(ConnectionPtr conn) override
+  void onConnect(ConnectionPtr conn) override
   {
-    std::string ip = std::move(conn->getPeerName());
-    std::cout << "[ECHO] conn accept: " << ip << "\n";
-    return Protocol::OK;
+    std::cout << "[ECHO] conn accept: " << conn->getPeerName() << "\n";
   }
 
-  Status onDisconnect(ConnectionPtr conn) override
+  void onDisconnect(ConnectionPtr conn) override
   {
-    std::string ip = std::move(conn->getPeerName());
-    std::cout << "[ECHO] conn close: " << ip << "\n";
-    return Protocol::OK;
+    std::cout << "[ECHO] conn close: " << conn->getPeerName() << "\n";
   }
 
-  Status onReceive(ConnectionPtr conn) override
+  void onReceive(ConnectionPtr conn) override
   {
     char buff[1024];
     ssize_t len = conn->recv(buff, sizeof(buff), 0);
@@ -40,15 +36,17 @@ public:
       std::cout << "[ECHO] data error: " << len << " " << errno << "\n";
       if (errno == EAGAIN || errno == EWOULDBLOCK)
       {
-        return Protocol::OK;
+        return; // it is fine
       }
-      return Protocol::ERROR;
+      conn->setError();
+      return;
     }
 
     if (len == 0)
     {
       std::cout << "[ECHO] empty data\n";
-      return Protocol::CLOSE;
+      conn->setClosed();
+      return;
     }
 
     ssize_t slen = conn->send(buff, len, 0);
@@ -69,8 +67,6 @@ public:
     }
 
     std::cout << "[ECHO] new data: " << buff << "\n";
-
-    return Protocol::OK;
   }
 };
 

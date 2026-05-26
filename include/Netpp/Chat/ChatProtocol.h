@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iostream>
-#include <set>
+#include <unordered_set>
 #include <string>
 #include <utility>
 
@@ -17,7 +17,7 @@ public:
   {
   }
 
-  Status onConnect(ConnectionPtr conn) override
+  void onConnect(ConnectionPtr conn) override
   {
     _clients.insert(conn);
 
@@ -29,23 +29,17 @@ public:
       std::cout << "[CHAT] FIXME: not all data resent\n";
     }
 
-    std::string ip = std::move(conn->getPeerName());
-    std::cout << "[CHAT] " << ip << " joined room\n";
-
-    return Protocol::OK;
+    std::cout << "[CHAT] " << conn->getPeerName() << " joined room\n";
   }
 
-   Status onDisconnect(ConnectionPtr conn) override
+  void onDisconnect(ConnectionPtr conn) override
   {
     _clients.erase(conn);
 
-    std::string ip = std::move(conn->getPeerName());
-    std::cout << "[CHAT] " << ip << " left room\n";
-
-    return Protocol::OK;
+    std::cout << "[CHAT] " << conn->getPeerName() << " left room\n";
   }
 
-  Status onReceive(ConnectionPtr conn) override
+  void onReceive(ConnectionPtr conn) override
   {
     char buff[1024];
     ssize_t len = conn->recv(buff, sizeof(buff), 0);
@@ -55,15 +49,17 @@ public:
       std::cout << "[CHAT] data error: " << len << " " << errno << "\n";
       if (errno == EAGAIN || errno == EWOULDBLOCK)
       {
-        return Protocol::OK;
+        return;
       }
-      return Protocol::ERROR;
+      conn->setError();
+      return;
     }
 
     if (len == 0)
     {
       std::cout << "[CHAT] empty data\n";
-      return Protocol::CLOSE;
+      conn->setError();
+      return;
     }
 
     for (const ConnectionPtr &c : _clients)
@@ -90,12 +86,10 @@ public:
     }
 
     std::cout << "[CHAT] new data: " << buff << "\n";
-
-    return Protocol::OK;
   }
 
 private:
-  std::set<ConnectionPtr> _clients;
+  std::unordered_set<ConnectionPtr> _clients;
 };
 
 } // namespace Netpp::Chat

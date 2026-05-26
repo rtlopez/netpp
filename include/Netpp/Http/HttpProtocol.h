@@ -22,25 +22,21 @@ public:
   {
   }
 
-  Status onConnect(ConnectionPtr conn) override
+  void onConnect(ConnectionPtr conn) override
   {
     int s = conn->getId();
     _requests[s] = std::make_shared<HttpRequest>();
-    std::string ip = conn->getPeerName();
-    std::cout << "[HTTP] " << ip << " connected\n";
-    return Protocol::OK;
+    std::cout << "[HTTP] " << conn->getPeerName() << " connected\n";
   }
 
-  Status onDisconnect(ConnectionPtr conn) override
+  void onDisconnect(ConnectionPtr conn) override
   {
     int s = conn->getId();
-    std::string ip = conn->getPeerName();
-    std::cout << "[HTTP] " << ip << " disconnected\n";
+    std::cout << "[HTTP] " << conn->getPeerName() << " disconnected\n";
     _requests.erase(s);
-    return Protocol::OK;
   }
 
-  Status onReceive(ConnectionPtr conn) override
+  void onReceive(ConnectionPtr conn) override
   {
     int s = conn->getId();
     char buff[1024];
@@ -51,14 +47,16 @@ public:
       std::cout << "[HTTP] data error: " << len << " " << errno << "\n";
       if (errno == EAGAIN || errno == EWOULDBLOCK)
       {
-        return Protocol::OK;
+        return; // it is fine
       }
-      return Protocol::ERROR;
+      conn->setError();
+      return;
     }
 
     if (len == 0)
     {
-      return Protocol::CLOSE;
+      conn->setClosed();
+      return;
     }
 
     std::cout << std::string(buff, len);
@@ -84,9 +82,9 @@ public:
       size_t len = std::strlen(content);
       sendHeaders(conn, req, e.code(), len);
       sendBody(conn, content, len);
-      return Protocol::CLOSE;
+      conn->setClosed();
+      return;
     }
-    return Protocol::OK;
   }
 
 private:
@@ -99,13 +97,13 @@ private:
     res.headers["content-length"] = std::to_string(len);
     const std::string headers = res.str();
     ssize_t slen = conn->send(headers.c_str(), headers.size(), 0);
-    std::cout << "[HTTP] sent headers " << slen << ' ' << errno << ' ' << ::strerror(errno) << "\n";
+    std::cout << "[HTTP] sent headers " << slen << "\n";
   }
 
   void sendBody(ConnectionPtr conn, const char *content, size_t len)
   {
     ssize_t slen = conn->send(content, len, 0);
-    std::cout << "[HTTP] sent body " << slen << ' ' << errno << ' ' << ::strerror(errno) << "\n";
+    std::cout << "[HTTP] sent body " << slen << "\n";
   }
 
   std::map<int, std::shared_ptr<HttpRequest>> _requests;

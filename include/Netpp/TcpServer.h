@@ -24,7 +24,7 @@ public:
     Socket::bind(s, _addr, _port);
     Socket::listen(s, 100);
     _s = s;
-    _loop->add(s, EPOLLIN | EPOLLPRI, this);
+    _loop->add(s, this);
   }
 
   virtual ~TcpServer()
@@ -36,64 +36,76 @@ public:
     }
   }
 
-  virtual void handle(sock_t s, uint32_t events) override
+  virtual void handleError(sock_t s) override
+  {
+    try
+    {
+      debug("TcpServer::handleError", "close", s);
+      close(s);
+    }
+    catch (...)
+    {
+      debug("TcpServer::handleError", "close", "exception", s);
+    }
+  }
+
+  virtual void handle(sock_t s) override
   {
     if (s == _s)
     {
       try
       {
-        debug("TcpServer::handle", "accept", s, events);
+        debug("TcpServer::handle", "accept", s);
         sockaddr_in addr;
         sock_t as = Socket::accept(_s, addr);
         if (as <= 0)
         {
           return;
         }
-        //_loop->add(as, EPOLLIN | EPOLLPRI | EPOLLET, this);
-        _loop->add(as, EPOLLIN | EPOLLPRI, this);
-        _connections[as] = std::make_shared<Connection>(as);
-        Protocol::Status status = _protocol->onConnect(_connections[as]);
-        if (status == Protocol::CLOSE || status == Protocol::ERROR)
+        _loop->add(as, this);
+        auto conn = std::make_shared<Connection>(as);
+        _connections[as] = conn;
+        _protocol->onConnect(conn);
+        if (conn->hasError())
         {
+          debug("TcpServer::handle", "accept", "error", as);
+          close(as);
+        }
+        if (conn->isClosed())
+        {
+          debug("TcpServer::handle", "accept", "closed", as);
           close(as);
         }
       }
       catch (...)
       {
-        debug("TcpServer::handle", "accept", "exception", s, events);
-      }
-    }
-    else if (events & (EPOLLERR | EPOLLHUP))
-    {
-      try
-      {
-        debug("TcpServer::handle", "close", s, events);
-        close(s);
-      }
-      catch (...)
-      {
-        debug("TcpServer::handle", "close", "exception", s, events);
+        debug("TcpServer::handle", "accept", "exception", s);
       }
     }
     else
     {
       try
       {
-        debug("TcpServer::handle", "recv", s, events);
+        debug("TcpServer::handle", "recv", s);
         auto it = _connections.find(s);
-        if (it == _connections.end())
+        if (it != _connections.end())
         {
-          return;
-        }
-        Protocol::Status status = _protocol->onReceive(it->second);
-        if (status == Protocol::CLOSE || status == Protocol::ERROR)
-        {
-          close(s);
+          _protocol->onReceive(it->second);
+          if (it->second->hasError())
+          {
+            debug("TcpServer::handle", "recv", "error", s);
+            close(s);
+          }
+          if (it->second->isClosed())
+          {
+            debug("TcpServer::handle", "recv", "closed", s);
+            close(s);
+          }
         }
       }
       catch (...)
       {
-        debug("TcpServer::handle", "recv", "exception", s, events);
+        debug("TcpServer::handle", "recv", "exception", s);
         close(s);
       }
     }
@@ -109,13 +121,12 @@ private:
   {
     debug("TcpServer::close", s);
     auto it = _connections.find(s);
-    if (it == _connections.end())
+    if (it != _connections.end())
     {
-      return;
+      _loop->del(s);
+      _protocol->onDisconnect(it->second);
+      _connections.erase(it);
     }
-    _loop->del(s);
-    _protocol->onDisconnect(it->second);
-    _connections.erase(it);
   }
 
   const char *_addr;

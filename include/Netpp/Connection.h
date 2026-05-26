@@ -14,7 +14,11 @@ public:
 
   virtual ~Connection()
   {
-    close();
+    if (_s)
+    {
+      Socket::close(_s);
+      _s = 0;
+    }
   }
 
   std::string getPeerName() const
@@ -39,12 +43,31 @@ public:
     return Socket::recv(_s, buf, len, flags);
   }
 
-  void close()
+  void setError()
+  {
+    _error = true;
+  }
+
+  bool hasError() const
+  {
+    return _error;
+  }
+
+  void setClosed()
   {
     // TODO: notify handler to close connection
-    Socket::close(_s);
+    // Socket::close(_s);
+    _close = true;
   }
+
+  bool isClosed() const
+  {
+    return _close;
+  }
+
 private:
+  bool _close = false;
+  bool _error = false;
   sock_t _s;
 };
 
