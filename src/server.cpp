@@ -7,6 +7,7 @@
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/Http/HttpProtocol.h"
 #include "Netpp/SignalHandler.h"
+#include "Netpp/SingleThreadDispatcher.h"
 #include "Netpp/TcpServer.h"
 
 static const char *HOST = "127.0.0.1";
@@ -29,10 +30,12 @@ int main()
   Netpp::Chat::ChatProtocol chat;
   Netpp::Echo::EchoProtocol echo;
 
+  Netpp::SingleThreadDispatcher dispatcher;
+
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
-  Netpp::TcpServer httpServer{HOST, HTTP_PORT, &loop, &http};
-  Netpp::TcpServer chatServer{HOST, CHAT_PORT, &loop, &chat};
-  Netpp::TcpServer echoServer{HOST, ECHO_PORT, &loop, &echo};
+  Netpp::TcpServer httpServer{HOST, HTTP_PORT, &loop, &http, &dispatcher};
+  Netpp::TcpServer chatServer{HOST, CHAT_PORT, &loop, &chat, &dispatcher};
+  Netpp::TcpServer echoServer{HOST, ECHO_PORT, &loop, &echo, &dispatcher};
 
   loop.run();
 

@@ -5,6 +5,7 @@
 
 #include "Netpp/Connection.h"
 #include "Netpp/DataEvent.h"
+#include "Netpp/Dispatcher.h"
 #include "Netpp/EventLoop.h"
 #include "Netpp/EventLoopHandler.h"
 #include "Netpp/NetppDebug.h"
@@ -17,9 +18,10 @@ namespace Netpp
 class TcpServer : public EventLoopHandler
 {
 public:
-  TcpServer(const char *addr, uint16_t port, EventLoop *loop, Protocol *protocol)
-      : _addr(addr), _port(port), _loop(loop), _protocol(protocol), _s(-1)
+  TcpServer(const char *addr, uint16_t port, EventLoop *loop, Protocol *protocol, Dispatcher *dispatcher)
+      : _addr(addr), _port(port), _loop(loop), _protocol(protocol), _dispatcher(dispatcher), _s(-1)
   {
+    _protocol->setSender(_dispatcher);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     debug("TcpServer", s);
     Socket::bind(s, _addr, _port);
@@ -96,12 +98,12 @@ public:
           if (len > 0)
           {
             data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
-            _protocol->receive(std::move(data));
+            _dispatcher->post(std::move(data), _protocol);
           }
           else if (len == 0)
           {
             debug("TcpServer::recv::disconnect", _s, s);
-            _protocol->send({conn, DataEvent::Buffer{}, true});
+            _dispatcher->send({conn, DataEvent::Buffer{}, true});
           }
           else if (errno == EAGAIN || errno == EWOULDBLOCK)
           {
@@ -110,7 +112,7 @@ public:
           else
           {
             debug("TcpServer::recv::error", _s, s, len, errno, ::strerror(errno));
-            _protocol->send({conn, DataEvent::Buffer{}, true});
+            _dispatcher->send({conn, DataEvent::Buffer{}, true});
           }
         }
         else
@@ -129,7 +131,7 @@ public:
     try
     {
       debug("TcpServer::flush");
-      _protocol->flush([this](sock_t s) { close(s); });
+      _dispatcher->drain([this](sock_t s) { close(s); });
     }
     catch (...)
     {
@@ -154,6 +156,7 @@ private:
   uint16_t _port;
   EventLoop *_loop;
   Protocol *_protocol;
+  Dispatcher *_dispatcher;
   sock_t _s;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
 };
