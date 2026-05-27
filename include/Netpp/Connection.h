@@ -36,13 +36,23 @@ public:
     return static_cast<int>(_s);
   }
 
-  int send(const char *buf, size_t len, int flags)
+  bool operator==(const Connection &other) const
+  {
+    return _s == other._s;
+  }
+
+  bool operator!=(const Connection &other) const
+  {
+    return _s != other._s;
+  }
+
+  int send(const void *buf, size_t len, int flags)
   {
     // TODO: write to buffer instead of sending directly
     return Socket::send(_s, buf, len, flags);
   }
 
-  int recv(char *buf, size_t len, int flags)
+  int recv(void *buf, size_t len, int flags)
   {
     // TODO: read from buffer instead of reading directly
     return Socket::recv(_s, buf, len, flags);

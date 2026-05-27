@@ -29,12 +29,8 @@ public:
   {
     auto str = std::string(data.data.begin(), data.data.end());
 
-    auto slen = data.conn->send(str.c_str(), str.size(), 0);
-
-    if (slen != (ssize_t)str.size())
-    {
-      std::cout << "[ECHO] FIXME: not all data resent\n";
-    }
+    DataEvent resp{data.conn, DataEvent::Buffer(str.begin(), str.end())};
+    send(std::move(resp));
 
     for (size_t i = 0; i < 2 && !str.empty(); i++)
     {

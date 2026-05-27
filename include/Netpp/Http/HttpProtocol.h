@@ -76,15 +76,18 @@ private:
     res.version = req->version;
     res.headers["content-type"] = "text/html";
     res.headers["content-length"] = std::to_string(len);
-    const std::string headers = res.str();
-    ssize_t slen = conn->send(headers.c_str(), headers.size(), 0);
+    const auto headers = res.str();
+    const auto slen = headers.size();
+    DataEvent data{conn, DataEvent::Buffer(headers.begin(), headers.end())};
     std::cout << "[HTTP] sent headers " << slen << "\n";
+    send(std::move(data));
   }
 
   void sendBody(ConnectionPtr conn, const char *content, size_t len)
   {
-    ssize_t slen = conn->send(content, len, 0);
-    std::cout << "[HTTP] sent body " << slen << "\n";
+    DataEvent data{conn, DataEvent::Buffer(content, content + len)};
+    std::cout << "[HTTP] sent body " << len << "\n";
+    send(std::move(data));
   }
 
   std::map<int, std::shared_ptr<HttpRequest>> _requests;

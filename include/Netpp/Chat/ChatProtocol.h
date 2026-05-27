@@ -20,13 +20,9 @@ public:
   {
     _clients.insert(conn);
 
-    const char buff[] = "Welcome to the chat room\n";
-    ssize_t len = sizeof(buff) - 1;
-    ssize_t slen = conn->send(buff, len, 0);
-    if (slen != len)
-    {
-      std::cout << "[CHAT] FIXME: not all data resent\n";
-    }
+    std::string welcome = "Welcome to the chat room\n";
+    DataEvent resp{conn, DataEvent::Buffer(welcome.begin(), welcome.end())};
+    send(std::move(resp));
 
     std::cout << "[CHAT] " << conn->getPeerName() << " joined room\n";
   }
@@ -46,11 +42,8 @@ public:
     {
       if (c != data.conn)
       {
-        auto slen = c->send(str.c_str(), str.size(), 0);
-        if (slen != (ssize_t)str.size())
-        {
-          std::cout << "[CHAT] FIXME: not all data resent\n";
-        }
+        DataEvent resp{c, DataEvent::Buffer(str.begin(), str.end())};
+        send(std::move(resp));
       }
     }
 

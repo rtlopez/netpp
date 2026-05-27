@@ -42,6 +42,11 @@ public:
   {
     try
     {
+      auto it = _connections.find(s);
+      if (it != _connections.end())
+      {
+        _protocol->onError(it->second);
+      }
       close(s);
     }
     catch (...)
@@ -68,7 +73,7 @@ public:
         auto conn = std::make_shared<Connection>(as);
         _connections[as] = conn;
         _protocol->onConnect(conn);
-        
+
         if (conn->hasError() || conn->isClosed())
         {
           close(as);
@@ -86,24 +91,24 @@ public:
         auto it = _connections.find(s);
         if (it != _connections.end())
         {
-          auto& conn = it->second;
+          auto &conn = it->second;
 
-          DataEvent data{conn, std::vector<uint8_t>(4096)};
-          ssize_t len = conn->recv(reinterpret_cast<char *>(data.data.data()), data.data.size(), 0);
-          
+          DataEvent data{conn, DataEvent::Buffer(4096)};
+          ssize_t len = conn->recv(data.data.data(), data.data.size(), 0);
+
           debug("TcpServer::recv", _s, s, len);
 
           if (len > 0)
           {
             data.data.resize(len);
-            _protocol->onReceive(std::move(data));
+            _protocol->receive(std::move(data));
           }
           else if (len == 0)
           {
             debug("TcpServer::disconnect", _s, s);
             conn->setClosed();
           }
-          else if(errno == EAGAIN || errno == EWOULDBLOCK)
+          else if (errno == EAGAIN || errno == EWOULDBLOCK)
           {
             // skip
           }
@@ -130,6 +135,16 @@ public:
         close(s);
       }
     }
+
+    try
+    {
+      debug("TcpServer::flush");
+      _protocol->flush();
+    }
+    catch (...)
+    {
+      debug("TcpServer::flush", "exception");
+    }
   }
 
   sock_t native() const
@@ -141,10 +156,10 @@ private:
   void close(sock_t s)
   {
     debug("TcpServer::close", s);
+    _loop->del(s);
     auto it = _connections.find(s);
     if (it != _connections.end())
     {
-      _loop->del(s);
       _protocol->onDisconnect(it->second);
       _connections.erase(it);
     }
