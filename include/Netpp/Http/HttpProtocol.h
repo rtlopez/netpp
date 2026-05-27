@@ -5,10 +5,10 @@
 #include <memory>
 #include <string>
 
+#include "Netpp/DataEvent.h"
 #include "Netpp/Http/HttpException.h"
 #include "Netpp/Http/HttpRequest.h"
 #include "Netpp/Http/HttpResponse.h"
-#include "Netpp/DataEvent.h"
 #include "Netpp/Protocol.h"
 
 namespace Netpp::Http
@@ -39,12 +39,13 @@ public:
   {
     int s = data.conn->getId();
 
-    std::cout << "[HTTP] " << s << " received(" << data.data.size() << "): " /* << std::string(data.data.begin(), data.data.end()) */ << "\n";
+    std::cout << "[HTTP] " << s << " received(" << data.buffer.size()
+              << "): " /* << std::string(data.buffer.begin(), data.buffer.end()) */ << "\n";
 
     auto req = _requests[s];
     try
     {
-      req->receive(reinterpret_cast<const char *>(data.data.data()), data.data.size());
+      req->receive(reinterpret_cast<const char *>(data.buffer.data()), data.buffer.size());
 
       if (req->headerParsed() && req->bodyReceived())
       {
@@ -53,7 +54,6 @@ public:
         size_t len = std::strlen(content);
         sendHeaders(data.conn, req, 404, len);
         sendBody(data.conn, content, len);
-        data.conn->setClosed();
       }
     }
     catch (const HttpException &e)
@@ -63,13 +63,11 @@ public:
       size_t len = std::strlen(content);
       sendHeaders(data.conn, req, e.code(), len);
       sendBody(data.conn, content, len);
-      data.conn->setClosed();
-      return;
     }
   }
 
 private:
-  void sendHeaders(ConnectionPtr conn, std::shared_ptr<HttpRequest> req, int status, size_t len)
+  void sendHeaders(ConnectionPtr conn, RequestPtr req, int status, size_t len)
   {
     HttpResponse res;
     res.status = status;
@@ -85,12 +83,12 @@ private:
 
   void sendBody(ConnectionPtr conn, const char *content, size_t len)
   {
-    DataEvent data{conn, DataEvent::Buffer(content, content + len)};
+    DataEvent data{conn, DataEvent::Buffer(content, content + len), true};
     std::cout << "[HTTP] sent body " << len << "\n";
     send(std::move(data));
   }
 
-  std::map<int, std::shared_ptr<HttpRequest>> _requests;
+  std::map<int, RequestPtr> _requests;
 };
 
 } // namespace Netpp::Http

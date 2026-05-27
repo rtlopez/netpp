@@ -10,8 +10,10 @@ namespace Netpp
 struct DataEvent
 {
   using Buffer = std::vector<uint8_t>;
+
   ConnectionPtr conn;
-  Buffer data;
+  Buffer buffer;
+  bool close = false;
 };
 
 } // namespace Netpp

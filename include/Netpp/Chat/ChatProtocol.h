@@ -36,7 +36,7 @@ public:
 
   void onReceive(DataEvent data) override
   {
-    auto str = std::string(data.data.begin(), data.data.end());
+    auto str = std::string(data.buffer.begin(), data.buffer.end());
 
     for (const ConnectionPtr &c : _clients)
     {

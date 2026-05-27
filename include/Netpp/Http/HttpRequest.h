@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -157,7 +158,7 @@ public:
     std::ostringstream ss;
 
     ss << method << ' ' << path << " HTTP/" << version << "\r\n";
-    for (const auto& [key, val] : headers)
+    for (const auto &[key, val] : headers)
     {
       ss << key << ": " << val << "\r\n";
     }
@@ -193,5 +194,7 @@ private:
     return str;
   }
 };
+
+using RequestPtr = std::shared_ptr<HttpRequest>;
 
 } // namespace Netpp::Http

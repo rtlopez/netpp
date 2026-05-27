@@ -27,7 +27,7 @@ public:
 
   void onReceive(DataEvent data) override
   {
-    auto str = std::string(data.data.begin(), data.data.end());
+    auto str = std::string(data.buffer.begin(), data.buffer.end());
 
     DataEvent resp{data.conn, DataEvent::Buffer(str.begin(), str.end())};
     send(std::move(resp));

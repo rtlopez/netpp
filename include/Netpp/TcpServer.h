@@ -23,7 +23,7 @@ public:
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     debug("TcpServer", s);
     Socket::bind(s, _addr, _port);
-    Socket::listen(s, 100);
+    Socket::listen(s, 128);
     _s = s;
     _loop->add(s, this);
   }
@@ -51,7 +51,7 @@ public:
     }
     catch (...)
     {
-      debug("TcpServer::error", "exception", s);
+      debug("TcpServer::error::exception", s);
     }
   }
 
@@ -66,22 +66,17 @@ public:
         sock_t as = Socket::accept(_s, addr);
         if (as <= 0)
         {
-          debug("TcpServer::accept", "error", s, as, errno, ::strerror(errno));
+          debug("TcpServer::accept::error", s, as, errno, ::strerror(errno));
           return;
         }
-        _loop->add(as, this);
         auto conn = std::make_shared<Connection>(as);
-        _connections[as] = conn;
+        _loop->add(as, this);
+        _connections.emplace(as, conn);
         _protocol->onConnect(conn);
-
-        if (conn->hasError() || conn->isClosed())
-        {
-          close(as);
-        }
       }
       catch (...)
       {
-        debug("TcpServer::accept", "exception", s);
+        debug("TcpServer::accept::exception", s);
       }
     }
     else
@@ -94,19 +89,19 @@ public:
           auto &conn = it->second;
 
           DataEvent data{conn, DataEvent::Buffer(4096)};
-          ssize_t len = conn->recv(data.data.data(), data.data.size(), 0);
+          auto len = conn->recv(data.buffer.data(), data.buffer.size(), 0);
 
           debug("TcpServer::recv", _s, s, len);
 
           if (len > 0)
           {
-            data.data.resize(len);
+            data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
             _protocol->receive(std::move(data));
           }
           else if (len == 0)
           {
-            debug("TcpServer::disconnect", _s, s);
-            conn->setClosed();
+            debug("TcpServer::recv::disconnect", _s, s);
+            _protocol->send({conn, DataEvent::Buffer{}, true});
           }
           else if (errno == EAGAIN || errno == EWOULDBLOCK)
           {
@@ -114,24 +109,19 @@ public:
           }
           else
           {
-            debug("TcpServer::recv", "error", _s, s, len, errno, ::strerror(errno));
-            conn->setError();
-          }
-
-          if (conn->isClosed() || conn->hasError())
-          {
-            close(s);
+            debug("TcpServer::recv::error", _s, s, len, errno, ::strerror(errno));
+            _protocol->send({conn, DataEvent::Buffer{}, true});
           }
         }
         else
         {
-          debug("TcpServer::recv", "unknown connection", _s, s);
+          debug("TcpServer::recv::unknown", _s, s);
           close(s);
         }
       }
       catch (...)
       {
-        debug("TcpServer::recv", "exception", s);
+        debug("TcpServer::recv::exception", s);
         close(s);
       }
     }
@@ -139,17 +129,12 @@ public:
     try
     {
       debug("TcpServer::flush");
-      _protocol->flush();
+      _protocol->flush([this](sock_t s) { close(s); });
     }
     catch (...)
     {
-      debug("TcpServer::flush", "exception");
+      debug("TcpServer::flush::exception");
     }
-  }
-
-  sock_t native() const
-  {
-    return _s;
   }
 
 private:

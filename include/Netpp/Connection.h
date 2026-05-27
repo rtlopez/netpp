@@ -43,7 +43,7 @@ public:
 
   bool operator!=(const Connection &other) const
   {
-    return _s != other._s;
+    return !this->operator==(other);
   }
 
   int send(const void *buf, size_t len, int flags)
@@ -58,31 +58,7 @@ public:
     return Socket::recv(_s, buf, len, flags);
   }
 
-  void setError()
-  {
-    _error = true;
-  }
-
-  bool hasError() const
-  {
-    return _error;
-  }
-
-  void setClosed()
-  {
-    // TODO: notify handler to close connection
-    // Socket::close(_s);
-    _close = true;
-  }
-
-  bool isClosed() const
-  {
-    return _close;
-  }
-
 private:
-  bool _close = false;
-  bool _error = false;
   sock_t _s;
 };
 

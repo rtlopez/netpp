@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <queue>
 
 #include "Connection.h"
@@ -33,7 +34,7 @@ public:
     _sendQueue.push(std::move(data));
   }
 
-  virtual void flush()
+  virtual void flush(std::function<void(sock_t)> handleClose)
   {
     while (!_recvQueue.empty())
     {
@@ -54,10 +55,15 @@ public:
       auto &data = _sendQueue.front();
       try
       {
-        const auto slen = data.conn->send(data.data.data(), data.data.size(), 0);
-        if (slen != (int)data.data.size())
+        const auto slen = data.conn->send(data.buffer.data(), data.buffer.size(), 0);
+        if (slen != (int)data.buffer.size())
         {
           std::cout << "[PROTOCOL] FIXME: not all data sent\n";
+        }
+        debug("Protocol::flush", slen, data.close);
+        if (data.close)
+        {
+          handleClose(data.conn->getId());
         }
       }
       catch (...)
