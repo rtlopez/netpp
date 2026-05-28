@@ -56,7 +56,7 @@ public:
     }
   }
 
-  virtual void handle(sock_t s) override
+  virtual void handleReading(sock_t s) override
   {
     if (s == _s)
     {
@@ -136,6 +136,10 @@ public:
     {
       debug("TcpServer::flush::exception");
     }
+  }
+
+  virtual void handleWriting(sock_t) override
+  {
   }
 
 private:

@@ -20,12 +20,13 @@ public:
   EventLoopEpoll() : _fd(-1), _running(true), _timeout(10000)
   {
     sock_t fd = ::epoll_create1(0);
-
+    int err = errno;
+    
     debug("EventLoopEpoll", fd);
 
     if (fd < 0)
     {
-      throw EventLoopException(errno, "epoll_create1() failed");
+      throw EventLoopException(err, "epoll_create1() failed");
     }
 
     _fd = fd;
@@ -40,36 +41,51 @@ public:
     }
   }
 
-  void add(sock_t fd, EventLoopHandler *handler) override
+  void add(sock_t fd, EventLoopHandler *handler, bool write = false) override
   {
-    uint32_t events = EPOLLIN | EPOLLPRI;
     if (_fd < 0)
     {
       throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
-
-    debug("EventLoopEpoll", "add", fd, events);
-
-    epoll_event event = {events, {.fd = fd}};
-
-    if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &event) < 0)
+        
+    uint32_t events = EPOLLIN | EPOLLPRI;
+    if (write)
     {
-      throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_ADD) failed");
+      events |= EPOLLOUT;
     }
 
-    _handlers[fd] = handler;
+    debug("EventLoopEpoll", "add", fd, events);
+    
+    epoll_event event = {events, {.fd = fd}};
+
+    if (_handlers.contains(fd))
+    {
+      if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
+      {
+        throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_MOD) failed");
+      }
+    }
+    else
+    {
+      if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &event) < 0)
+      {
+        throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_ADD) failed");
+      }
+  
+      _handlers[fd] = handler;
+    }
   }
 
   void del(sock_t fd) override
   {
     if (_fd < 0)
     {
-      throw EventLoopException(errno, "EventLoopEpoll not initialized");
+      throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
 
     debug("EventLoopEpoll", "del", fd);
 
-    if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, NULL) < 0)
+    if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, nullptr) < 0)
     {
       throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_DEL) failed");
     }
@@ -81,7 +97,7 @@ public:
   {
     if (_fd < 0)
     {
-      throw EventLoopException(errno, "EventLoopEpoll not initialized");
+      throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
 
     while (_running)
@@ -89,12 +105,13 @@ public:
       int ret = ::epoll_wait(_fd, _events, MAX_EVENTS, _timeout);
       if (ret == -1)
       {
-        debug("EventLoopEpoll", "run", "error", ret, errno);
-        if (errno == EINTR)
+        int err = errno;
+        debug("EventLoopEpoll", "run", "error", ret, err);
+        if (err == EINTR)
         {
           continue; // interrupted, try again
         }
-        throw EventLoopException(errno, "epoll_wait() failed");
+        throw EventLoopException(err, "epoll_wait() failed");
       }
 
       if (ret == 0)
@@ -120,7 +137,14 @@ public:
       handler->handleError(ev.data.fd);
       return;
     }
-    handler->handle(ev.data.fd);
+    if (ev.events & EPOLLOUT)
+    {
+      handler->handleWriting(ev.data.fd);
+    }
+    if (ev.events & (EPOLLIN | EPOLLPRI))
+    {
+      handler->handleReading(ev.data.fd);
+    }
   }
 
   void stop() override
@@ -131,7 +155,7 @@ public:
 private:
   static const size_t MAX_EVENTS = 32;
   sock_t _fd;
-  bool _running;
+  volatile bool _running;
   int _timeout;
   epoll_event _events[MAX_EVENTS];
   std::unordered_map<sock_t, EventLoopHandler *> _handlers;

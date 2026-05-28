@@ -53,7 +53,7 @@ public:
     }
   }
 
-  void handle(sock_t s) override
+  void handleReading(sock_t s) override
   {
     signalfd_siginfo info;
     ssize_t len = ::read(s, &info, sizeof(info));
@@ -68,6 +68,10 @@ public:
   void handleError(sock_t) override
   {
     _loop->stop();
+  }
+
+  void handleWriting(sock_t) override
+  {
   }
 
 private:
