@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+#include "RingBuffer.h"
 #include "Socket.h"
 
 namespace Netpp
@@ -60,6 +61,7 @@ public:
 
 private:
   sock_t _s;
+  RingBuffer _sendBuffer{4096};
 };
 
 using ConnectionPtr = std::shared_ptr<Connection>;

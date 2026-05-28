@@ -11,5 +11,9 @@ FetchContent_MakeAvailable(googletest)
 add_executable(HttpRequestTest HttpRequestTest.cpp)
 target_link_libraries(HttpRequestTest GTest::gtest_main)
 
+add_executable(RingBufferTest RingBufferTest.cpp)
+target_link_libraries(RingBufferTest GTest::gtest_main)
+
 include(GoogleTest)
 gtest_discover_tests(HttpRequestTest)
+gtest_discover_tests(RingBufferTest)
