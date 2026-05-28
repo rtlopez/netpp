@@ -23,7 +23,7 @@ public:
     _recvQueue.push({std::move(data), target});
   }
 
-  void drain(std::function<void(sock_t)> handleClose) override
+  void drainReceived()
   {
     while (!_recvQueue.empty())
     {
@@ -38,7 +38,10 @@ public:
       }
       _recvQueue.pop();
     }
+  }
 
+  void drainSent(std::function<void(sock_t)> handleClose)
+  {
     while (!_sendQueue.empty())
     {
       auto &data = _sendQueue.front();
@@ -61,6 +64,12 @@ public:
       }
       _sendQueue.pop();
     }
+  }
+
+  void drain(std::function<void(sock_t)> handleClose) override
+  {
+    drainReceived();
+    drainSent(handleClose);
   }
 
 private:

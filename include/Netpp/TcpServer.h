@@ -21,7 +21,6 @@ public:
   TcpServer(const char *addr, uint16_t port, EventLoop *loop, Protocol *protocol, Dispatcher *dispatcher)
       : _addr(addr), _port(port), _loop(loop), _protocol(protocol), _dispatcher(dispatcher), _s(-1)
   {
-    _protocol->setSender(_dispatcher);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     debug("TcpServer", s);
     Socket::bind(s, _addr, _port);

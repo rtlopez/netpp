@@ -17,6 +17,10 @@ namespace Netpp::Http
 class HttpProtocol : public Protocol
 {
 public:
+  HttpProtocol(Sender *sender) : Protocol(sender)
+  {
+  }
+
   virtual ~HttpProtocol()
   {
   }

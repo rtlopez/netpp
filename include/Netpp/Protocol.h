@@ -10,12 +10,11 @@ namespace Netpp
 class Protocol
 {
 public:
-  virtual ~Protocol() = default;
-
-  void setSender(Sender *sender)
+  Protocol(Sender *sender) : _sender(sender)
   {
-    _sender = sender;
   }
+
+  virtual ~Protocol() = default;
 
   virtual void onConnect(ConnectionPtr conn) = 0;
   virtual void onReceive(DataEvent data) = 0;

@@ -26,11 +26,11 @@ int main()
 
   Netpp::EventLoopEpoll loop;
 
-  Netpp::Http::HttpProtocol http;
-  Netpp::Chat::ChatProtocol chat;
-  Netpp::Echo::EchoProtocol echo;
-
   Netpp::SingleThreadDispatcher dispatcher;
+
+  Netpp::Http::HttpProtocol http{&dispatcher};
+  Netpp::Chat::ChatProtocol chat{&dispatcher};
+  Netpp::Echo::EchoProtocol echo{&dispatcher};
 
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
   Netpp::TcpServer httpServer{HOST, HTTP_PORT, &loop, &http, &dispatcher};

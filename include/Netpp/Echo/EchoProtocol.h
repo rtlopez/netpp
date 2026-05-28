@@ -11,6 +11,10 @@ namespace Netpp::Echo
 class EchoProtocol : public Protocol
 {
 public:
+  EchoProtocol(Sender *sender) : Protocol(sender)
+  {
+  }
+
   virtual ~EchoProtocol()
   {
   }

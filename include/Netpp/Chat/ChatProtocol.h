@@ -12,6 +12,10 @@ namespace Netpp::Chat
 class ChatProtocol : public Protocol
 {
 public:
+  ChatProtocol(Sender *sender) : Protocol(sender)
+  {
+  }
+
   virtual ~ChatProtocol()
   {
   }
