@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 
-#include "RingBuffer.h"
 #include "Socket.h"
 
 namespace Netpp
@@ -47,21 +46,8 @@ public:
     return !this->operator==(other);
   }
 
-  int send(const void *buf, size_t len, int flags)
-  {
-    // TODO: write to buffer instead of sending directly
-    return Socket::send(_s, buf, len, flags);
-  }
-
-  int recv(void *buf, size_t len, int flags)
-  {
-    // TODO: read from buffer instead of reading directly
-    return Socket::recv(_s, buf, len, flags);
-  }
-
 private:
   sock_t _s;
-  RingBuffer _sendBuffer{4096};
 };
 
 using ConnectionPtr = std::shared_ptr<Connection>;

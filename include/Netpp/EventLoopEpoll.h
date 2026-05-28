@@ -72,7 +72,7 @@ public:
         throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_ADD) failed");
       }
   
-      _handlers[fd] = handler;
+      _handlers.emplace(fd, handler);
     }
   }
 

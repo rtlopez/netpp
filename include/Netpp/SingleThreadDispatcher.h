@@ -1,7 +1,9 @@
 #pragma once
 
-#include <iostream>
+#include <memory>
 #include <queue>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "Dispatcher.h"
 #include "NetppDebug.h"
@@ -15,72 +17,42 @@ class SingleThreadDispatcher : public Dispatcher
 public:
   void send(DataEvent data) override
   {
-    _sendQueue.push(std::move(data));
+    auto s = data.conn->getId();
+    getSendQueue(s).push(std::move(data));
+    _pendingResponses.insert(s);
   }
 
-  void post(DataEvent data, Protocol *target) override
+  void onConnect(sock_t s) override
   {
-    _recvQueue.push({std::move(data), target});
+    debug("SingleThreadDispatcher::onConnect", s);
+    _sendQueue.emplace(s, std::queue<DataEvent>{});
   }
 
-  void drainReceived()
+  void onDisconnect(sock_t s) override
   {
-    while (!_recvQueue.empty())
-    {
-      auto &item = _recvQueue.front();
-      try
-      {
-        item.target->onReceive(std::move(item.data));
-      }
-      catch (...)
-      {
-        debug("SingleThreadDispatcher::drain", "exception in onReceive");
-      }
-      _recvQueue.pop();
-    }
+    debug("SingleThreadDispatcher::onDisconnect", s);
+    _sendQueue.erase(s);
+    _pendingResponses.erase(s);
   }
 
-  void drainSent(std::function<void(sock_t)> handleClose)
+  void onSendDone(sock_t s) override
   {
-    while (!_sendQueue.empty())
-    {
-      auto &data = _sendQueue.front();
-      try
-      {
-        const auto slen = data.conn->send(data.buffer.data(), data.buffer.size(), 0);
-        if (slen != (int)data.buffer.size())
-        {
-          std::cout << "[DISPATCHER] FIXME: not all data sent\n";
-        }
-        debug("SingleThreadDispatcher::drain", slen, data.close);
-        if (data.close)
-        {
-          handleClose(data.conn->getId());
-        }
-      }
-      catch (...)
-      {
-        debug("SingleThreadDispatcher::drain", "exception in onSend");
-      }
-      _sendQueue.pop();
-    }
+    _pendingResponses.erase(s);
   }
 
-  void drain(std::function<void(sock_t)> handleClose) override
+  std::queue<DataEvent> &getSendQueue(sock_t s) override
   {
-    drainReceived();
-    drainSent(handleClose);
+    return _sendQueue.at(s);
+  }
+
+  std::unordered_set<sock_t> getPendingResponses() override
+  {
+    return _pendingResponses;
   }
 
 private:
-  struct RecvItem
-  {
-    DataEvent data;
-    Protocol *target;
-  };
-
-  std::queue<RecvItem> _recvQueue;
-  std::queue<DataEvent> _sendQueue;
+  std::unordered_map<sock_t, std::queue<DataEvent>> _sendQueue;
+  std::unordered_set<sock_t> _pendingResponses;
 };
 
 } // namespace Netpp

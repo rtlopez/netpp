@@ -31,7 +31,7 @@ protected:
   }
 
 private:
-  Sender *_sender = nullptr;
+  Sender *_sender;
 };
 
 } // namespace Netpp

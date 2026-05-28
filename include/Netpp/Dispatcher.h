@@ -14,8 +14,13 @@ class Dispatcher : public Sender
 {
 public:
   virtual ~Dispatcher() = default;
-  virtual void post(DataEvent data, Protocol *target) = 0;
-  virtual void drain(std::function<void(sock_t)> handleClose) = 0;
+
+  virtual void onConnect(sock_t s) = 0;
+  virtual void onDisconnect(sock_t s) = 0;
+  virtual void onSendDone(sock_t s) = 0;
+
+  virtual std::queue<DataEvent> &getSendQueue(sock_t s) = 0;
+  virtual std::unordered_set<sock_t> getPendingResponses() = 0;
 };
 
 } // namespace Netpp

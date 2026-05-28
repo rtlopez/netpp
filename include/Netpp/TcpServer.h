@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <queue>
 #include <unordered_map>
 
 #include "Netpp/Connection.h"
@@ -41,118 +42,189 @@ public:
 
   virtual void handleError(sock_t s) override
   {
-    try
+    auto it = _connections.find(s);
+    if (it != _connections.end())
     {
-      auto it = _connections.find(s);
-      if (it != _connections.end())
-      {
-        _protocol->onError(it->second);
-      }
-      close(s);
+      _protocol->onError(it->second);
     }
-    catch (...)
-    {
-      debug("TcpServer::error::exception", s);
-    }
+    close(s);
   }
 
   virtual void handleReading(sock_t s) override
   {
     if (s == _s)
     {
-      try
+      debug("TcpServer::accept", s);
+      sockaddr_in addr;
+      sock_t as = Socket::accept(_s, addr);
+      if (as <= 0)
       {
-        debug("TcpServer::accept", s);
-        sockaddr_in addr;
-        sock_t as = Socket::accept(_s, addr);
-        if (as <= 0)
-        {
-          debug("TcpServer::accept::error", s, as, errno, ::strerror(errno));
-          return;
-        }
-        auto conn = std::make_shared<Connection>(as);
-        _loop->add(as, this);
-        _connections.emplace(as, conn);
-        _protocol->onConnect(conn);
+        debug("TcpServer::accept::error", s, as, errno, ::strerror(errno));
+        return;
       }
-      catch (...)
-      {
-        debug("TcpServer::accept::exception", s);
-      }
+      auto conn = std::make_shared<Connection>(as);
+      _connections.emplace(as, conn);
+      _dispatcher->onConnect(as);
+      _protocol->onConnect(conn);
+      _loop->add(as, this);
     }
     else
     {
-      try
+      auto it = _connections.find(s);
+      if (it != _connections.end())
       {
-        auto it = _connections.find(s);
-        if (it != _connections.end())
+        auto &conn = it->second;
+
+        DataEvent data{conn, DataEvent::Buffer(4096)};
+        auto len = Socket::recv(s, data.buffer.data(), data.buffer.size(), 0);
+        auto err = errno;
+
+        debug("TcpServer::recv", _s, s, len);
+
+        if (len > 0)
         {
-          auto &conn = it->second;
-
-          DataEvent data{conn, DataEvent::Buffer(4096)};
-          auto len = conn->recv(data.buffer.data(), data.buffer.size(), 0);
-
-          debug("TcpServer::recv", _s, s, len);
-
-          if (len > 0)
-          {
-            data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
-            _dispatcher->post(std::move(data), _protocol);
-          }
-          else if (len == 0)
-          {
-            debug("TcpServer::recv::disconnect", _s, s);
-            _dispatcher->send({conn, DataEvent::Buffer{}, true});
-          }
-          else if (errno == EAGAIN || errno == EWOULDBLOCK)
-          {
-            // skip
-          }
-          else
-          {
-            debug("TcpServer::recv::error", _s, s, len, errno, ::strerror(errno));
-            _dispatcher->send({conn, DataEvent::Buffer{}, true});
-          }
+          data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
+          post(std::move(data), _protocol);
+        }
+        else if (len == 0)
+        {
+          debug("TcpServer::recv::disconnect", _s, s);
+          close(s);
+        }
+        else if (err == EAGAIN || err == EWOULDBLOCK)
+        {
+          // skip
         }
         else
         {
-          debug("TcpServer::recv::unknown", _s, s);
+          debug("TcpServer::recv::error", _s, s, len, err, ::strerror(err));
           close(s);
         }
       }
-      catch (...)
+      else
       {
-        debug("TcpServer::recv::exception", s);
+        debug("TcpServer::recv::unknown", _s, s);
         close(s);
       }
     }
 
-    try
+    drainRecv();
+    drainSent();
+  }
+
+  virtual void handleWriting(sock_t s) override
+  {
+    debug("TcpServer::handleWriting", s);
+    drainSent(s);
+  }
+
+  void drainRecv()
+  {
+    debug("TcpServer::drainRecv", _recvQueue.size());
+    while (!_recvQueue.empty())
     {
-      debug("TcpServer::flush");
-      _dispatcher->drain([this](sock_t s) { close(s); });
-    }
-    catch (...)
-    {
-      debug("TcpServer::flush::exception");
+      auto &item = _recvQueue.front();
+      item.target->onReceive(std::move(item.data));
+      _recvQueue.pop();
     }
   }
 
-  virtual void handleWriting(sock_t) override
+  void drainSent()
   {
+    auto socks = _dispatcher->getPendingResponses();
+    debug("TcpServer::drainSent", socks.size());
+    for (sock_t s : socks)
+    {
+      drainSent(s);
+    }
+  }
+
+  bool drainSent(sock_t s)
+  {
+    auto &queue = _dispatcher->getSendQueue(s);
+    debug("TcpServer::drainSent", s, queue.size());
+    while (!queue.empty())
+    {
+      auto &data = queue.front();
+      if (!drainSent(s, data))
+      {
+        _loop->add(s, this, true); // wait for writable
+        return false;
+      }
+      if (data.close)
+      {
+        close(s);
+        // queue no longer exists
+        return true;
+      }
+      queue.pop();
+    }
+    _dispatcher->onSendDone(s);
+    _loop->add(s, this, false); // drained, switch back to read mode
+    return true;
+  }
+
+  bool drainSent(sock_t s, DataEvent &data)
+  {
+    if (data.buffer.empty())
+    {
+      return true;
+    }
+
+    size_t toSend = data.buffer.size();
+    size_t sent = 0;
+    do
+    {
+      auto len = Socket::send(s, data.buffer.data() + sent, data.buffer.size() - sent, 0);
+      auto err = errno;
+      debug("TcpServer::flush", s, len, data.close);
+      if (len < 0)
+      {
+        if (err == EAGAIN || err == EWOULDBLOCK)
+        {
+          // unable to drain connection buffer, wait for next writable event
+          data.buffer.erase(data.buffer.begin(), data.buffer.begin() + sent); // remove alredy sent part
+          return false;
+        }
+        else
+        {
+          debug("TcpServer::flush::error", s, len, err, ::strerror(err));
+          data.close = true; // mark for close
+        }
+      }
+      else
+      {
+        sent += static_cast<size_t>(len);
+      }
+    } while (sent < toSend);
+    return true;
   }
 
 private:
+  void post(DataEvent data, Protocol *target)
+  {
+    _recvQueue.push({std::move(data), target});
+  }
+
   void close(sock_t s)
   {
     debug("TcpServer::close", s);
     _loop->del(s);
     auto it = _connections.find(s);
-    if (it != _connections.end())
+    bool known = it != _connections.end();
+    if (known)
     {
       _protocol->onDisconnect(it->second);
+    }
+    _dispatcher->onDisconnect(s);
+    if (known)
+    {
       _connections.erase(it);
     }
+    // _connections.emplace(as, conn);
+    // _dispatcher->onConnect(as);
+    // _protocol->onConnect(conn);
+    // _loop->add(as, this);
   }
 
   const char *_addr;
@@ -162,6 +234,13 @@ private:
   Dispatcher *_dispatcher;
   sock_t _s;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
+  struct RecvItem
+  {
+    DataEvent data;
+    Protocol *target;
+  };
+
+  std::queue<RecvItem> _recvQueue;
 };
 
 } // namespace Netpp

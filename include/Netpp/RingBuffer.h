@@ -13,7 +13,7 @@ namespace Netpp
 class RingBuffer
 {
 public:
-  explicit RingBuffer(size_t capacity) : _buffer(capacity), _head(0), _tail(0), _size(0)
+  explicit RingBuffer(size_t capacity = 0) : _buffer(capacity), _head(0), _tail(0), _size(0)
   {
   }
 
@@ -27,6 +27,11 @@ public:
   size_t capacity() const
   {
     return _buffer.size();
+  }
+
+  size_t available() const
+  {
+    return _buffer.size() - _size;
   }
 
   bool empty() const
@@ -45,7 +50,7 @@ public:
       return;
     }
 
-    ensureSpace(data.size());
+    expand(data.size());
 
     size_t cap = _buffer.size();
 
@@ -152,13 +157,12 @@ public:
       return;
     }
 
-    size_t cap = _buffer.size();
-
     if (_head == 0)
     {
       return; // already linear
     }
 
+    size_t cap = _buffer.size();
     if (_head + _size <= cap)
     {
       // Data doesn't wrap — just shift to front.
@@ -178,13 +182,19 @@ public:
     _tail = _size;
   }
 
-private:
+  void clear()
+  {
+    _buffer.clear();
+    _head = 0;
+    _tail = 0;
+    _size = 0;
+  }
+
   // Ensure at least `needed` bytes of free space are available.
   // Linearizes and/or grows the buffer as necessary.
-  void ensureSpace(size_t needed)
+  void expand(size_t needed)
   {
-    size_t free = _buffer.size() - _size;
-    if (free >= needed)
+    if (available() >= needed)
     {
       return;
     }
