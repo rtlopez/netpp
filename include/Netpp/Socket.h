@@ -114,17 +114,16 @@ public:
       throw SocketException(err, "fcntl(O_NONBLOCK) failed");
     }
 
-    struct linger sl;
-    sl.l_onoff = 0;  // disable linger
-    sl.l_linger = 1; // timeout in seconds
-
-    status = ::setsockopt(afd, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl));
-    err = errno;
-    debug("Socket::setsockopt(SO_LINGER)", fd, afd, err, ::strerror(err));
-    if (status < 0)
-    {
-      throw SocketException(err, "setsockopt(SO_LINGER) failed");
-    }
+    // struct linger sl;
+    // sl.l_onoff = 0;  // disable linger
+    // sl.l_linger = 1; // timeout in seconds
+    // status = ::setsockopt(afd, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl));
+    // err = errno;
+    // debug("Socket::setsockopt(SO_LINGER)", fd, afd, err, ::strerror(err));
+    // if (status < 0)
+    // {
+    //   throw SocketException(err, "setsockopt(SO_LINGER) failed");
+    // }
 
     return afd;
   }
@@ -134,13 +133,17 @@ public:
     ::shutdown(fd, SHUT_WR);
     int ret = ::close(fd);
     int err = errno;
-    debug("Socket::close", fd, ret, err, ::strerror(err));
     if (ret < 0)
     {
+      debug("Socket::close", fd, ret, err, ::strerror(err));
       if (err == EBADF)
       {
         throw SocketException(err, "close() failed");
       }
+    }
+    else
+    {
+      debug("Socket::close", fd, ret);
     }
     return 0;
   }

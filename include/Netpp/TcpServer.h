@@ -36,7 +36,7 @@ public:
   virtual ~TcpServer()
   {
     debug("~TcpServer");
-    for (auto& [s, protocol] : _listeners)
+    for (auto &[s, protocol] : _listeners)
     {
       _loop->del(s);
       Socket::close(s);
@@ -72,7 +72,7 @@ public:
       _protocols.emplace(as, protocol);
       _connections.emplace(as, conn);
       _dispatcher->onConnect(as);
-      protocol->onConnect(conn);// protocol
+      protocol->onConnect(conn);
       _loop->add(as, this);
     }
     else
@@ -117,13 +117,33 @@ public:
     }
 
     drainRecv();
-    drainSent();
   }
+
+  enum DrainResult
+  {
+    Done,
+    Partial,
+    Close
+  };
 
   virtual void handleWriting(sock_t s) override
   {
     debug("TcpServer::handleWriting", s);
-    drainSent(s);
+    auto result = drainSent(s);
+    switch (result)
+    {
+    case DrainResult::Done:
+      debug("TcpServer::handleWriting::done", s);
+      _loop->add(s, this, false); // all sent, stop watching writes
+      break;
+    case DrainResult::Close:
+      debug("TcpServer::handleWriting::close", s);
+      close(s);
+      break;
+    case DrainResult::Partial:
+      debug("TcpServer::handleWriting::partial", s);
+      break;
+    }
   }
 
   void drainRecv()
@@ -137,39 +157,46 @@ public:
     }
   }
 
-  void drainSent()
-  {
-    auto socks = _dispatcher->getPendingResponses();
-    debug("TcpServer::drainSent", socks.size());
-    for (sock_t s : socks)
-    {
-      drainSent(s);
-    }
-  }
-
-  bool drainSent(sock_t s)
+  DrainResult drainSent(sock_t s)
   {
     auto &queue = _dispatcher->getSendQueue(s);
     debug("TcpServer::drainSent", s, queue.size());
+    if (queue.empty())
+    {
+      return DrainResult::Done;
+    }
     while (!queue.empty())
     {
       auto &data = queue.front();
-      if (!drainSent(s, data))
+      bool drained = data.sent >= data.buffer.size();
+
+      // re-entry check: if already marked for close and fully sent, close connection
+      if (data.close && drained)
       {
-        _loop->add(s, this, true); // wait for writable
-        return false;
+        queue.pop();
+        _dispatcher->onSendDone(s);
+        return DrainResult::Close;
       }
+
+      // drain if needed
+      if (!drained)
+      {
+        if (!drainSent(s, data))
+        {
+          return DrainResult::Partial; // EAGAIN, wait for next handleWriting
+        }
+      }
+
+      // if it is closing batch, wait till fully sent before popping
       if (data.close)
       {
-        close(s);
-        // queue no longer exists
-        return true;
+        return DrainResult::Partial; // will keep monitoring
       }
+
       queue.pop();
     }
     _dispatcher->onSendDone(s);
-    _loop->add(s, this, false); // drained, switch back to read mode
-    return true;
+    return DrainResult::Done;
   }
 
   bool drainSent(sock_t s, DataEvent &data)
@@ -179,11 +206,9 @@ public:
       return true;
     }
 
-    size_t toSend = data.buffer.size();
-    size_t sent = 0;
     do
     {
-      auto len = Socket::send(s, data.buffer.data() + sent, data.buffer.size() - sent, 0);
+      auto len = Socket::send(s, data.buffer.data() + data.sent, data.buffer.size() - data.sent, 0);
       auto err = errno;
       debug("TcpServer::flush", s, len, data.close);
       if (len < 0)
@@ -191,26 +216,29 @@ public:
         if (err == EAGAIN || err == EWOULDBLOCK)
         {
           // unable to drain connection buffer, wait for next writable event
-          data.buffer.erase(data.buffer.begin(), data.buffer.begin() + sent); // remove alredy sent part
           return false;
         }
         else
         {
           debug("TcpServer::flush::error", s, len, err, ::strerror(err));
           data.close = true; // mark for close
+          data.sent = data.buffer.size(); // mark as "done" so close triggers
+          return true;
         }
       }
       else
       {
-        sent += static_cast<size_t>(len);
+        data.sent += static_cast<size_t>(len);
       }
-    } while (sent < toSend);
+    } while (data.sent < data.buffer.size());
     return true;
   }
 
   void send(DataEvent data)
   {
+    auto id = data.conn->getId(); // note std::move later
     _dispatcher->send(std::move(data));
+    _loop->add(id, this, true); // enable write watching
   }
 
 private:

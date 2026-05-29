@@ -14,6 +14,7 @@ struct DataEvent
   ConnectionPtr conn;
   Buffer buffer;
   bool close = false;
+  size_t sent = 0;
 };
 
 } // namespace Netpp

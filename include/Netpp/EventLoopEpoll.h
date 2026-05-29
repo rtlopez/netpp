@@ -7,7 +7,6 @@
 #include "EventLoopHandler.h"
 #include "Exception.h"
 #include "NetppDebug.h"
-#include "Socket.h"
 
 // https://medium.com/@m-ibrahim.research/mastering-epoll-the-engine-behind-high-performance-linux-networking-85a15e6bde90
 
@@ -37,7 +36,7 @@ public:
     debug("~EventLoopEpoll", _fd);
     if (_fd >= 0)
     {
-      Socket::close(_fd);
+      ::close(_fd);
     }
   }
 
