@@ -71,9 +71,9 @@ public:
       auto conn = std::make_shared<Connection>(as);
       _protocols.emplace(as, protocol);
       _connections.emplace(as, conn);
+      _loop->add(as, this);
       _dispatcher->onConnect(as);
       protocol->onConnect(conn);
-      _loop->add(as, this);
     }
     else
     {
@@ -250,7 +250,6 @@ private:
   void close(sock_t s)
   {
     debug("TcpServer::close", s);
-    _loop->del(s);
     auto it = _connections.find(s);
     bool known = it != _connections.end();
     if (known)
@@ -260,15 +259,16 @@ private:
       _protocols.erase(s);
     }
     _dispatcher->onDisconnect(s);
+    _loop->del(s);
     if (known)
     {
       _connections.erase(it);
     }
     // _connections.emplace(as, conn);
     // _protocols.emplace(as, protocol);
+    // _loop->add(as, this);
     // _dispatcher->onConnect(as);
     // _protocol->onConnect(conn);
-    // _loop->add(as, this);
   }
 
   EventLoop *_loop;
