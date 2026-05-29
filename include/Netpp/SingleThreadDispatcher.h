@@ -1,13 +1,11 @@
 #pragma once
 
-#include <memory>
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
 
 #include "Dispatcher.h"
 #include "NetppDebug.h"
-#include "Protocol.h"
 
 namespace Netpp
 {

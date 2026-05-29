@@ -1,6 +1,7 @@
 #pragma once
 
-#include <functional>
+#include <unordered_set>
+#include <queue>
 
 #include "Sender.h"
 #include "Socket.h"

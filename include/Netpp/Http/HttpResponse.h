@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace Netpp::Http
 {
