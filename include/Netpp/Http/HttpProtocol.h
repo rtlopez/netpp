@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <map>
 #include <memory>
 #include <string>
@@ -26,17 +25,22 @@ public:
   {
   }
 
+  void addMiddleware(std::function<bool(HttpRequest &, HttpResponse &)> middleware)
+  {
+    _middleware = std::move(middleware);
+  }
+
   void onConnect(ConnectionPtr conn) override
   {
     int s = conn->getId();
     _requests[s] = std::make_shared<HttpRequest>();
-    std::cout << "[HTTP] " << conn->getPeerName() << " " << s << " connected\n";
+    debug("HTTP:connect", s, conn->getPeerName());
   }
 
   void onDisconnect(ConnectionPtr conn) override
   {
     int s = conn->getId();
-    std::cout << "[HTTP] " << conn->getPeerName() << " " << s << " disconnected\n";
+    debug("HTTP:disconnect", s, conn->getPeerName());
     _requests.erase(s);
   }
 
@@ -44,8 +48,7 @@ public:
   {
     int s = data.conn->getId();
 
-    std::cout << "[HTTP] " << s << " received(" << data.buffer.size()
-              << "): " /* << std::string(data.buffer.begin(), data.buffer.end()) */ << "\n";
+    debug("HTTP:receive", s, data.buffer.size());
 
     auto req = _requests[s];
     try
@@ -54,47 +57,55 @@ public:
 
       if (req->headerParsed() && req->bodyReceived())
       {
-        const char *content =
-            "<html>\n<head><title>Not Found</title></head>\n<body><h1>Not Found</h1></body>\n</html>\n";
-        size_t len = std::strlen(content);
-        sendHeaders(data.conn, req, 404, len);
-        sendBody(data.conn, content, len);
+        HttpResponse res;
+        initResponse(*req, res);
+        if (!_middleware || !_middleware(*req, res))
+        {
+          static const char content[] =
+              "<html>\n<head><title>Not Found</title></head>\n<body><h1>Not Found</h1></body>\n</html>\n";
+          res.body = std::vector<uint8_t>{content, content + sizeof(content) - 1};
+        }
+        sendResponse(data.conn, res);
       }
     }
     catch (const HttpException &e)
     {
-      const char *content =
+      HttpResponse res;
+      initResponse(*req, res);
+      res.status = e.code();
+      static const char content[] =
           "<html>\n<head><title>Invalid request</title></head>\n<body><h1>Invalid Request</h1></body>\n</html>\n";
-      size_t len = std::strlen(content);
-      sendHeaders(data.conn, req, e.code(), len);
-      sendBody(data.conn, content, len);
+      res.body = std::vector<uint8_t>{content, content + sizeof(content) - 1};
+      sendResponse(data.conn, res);
     }
   }
 
 private:
-  void sendHeaders(ConnectionPtr conn, RequestPtr req, int status, size_t len)
+  void initResponse(HttpRequest &req, HttpResponse &res)
   {
-    HttpResponse res;
-    res.status = status;
-    res.version = req->version;
+    res.version = req.version;
     res.headers["content-type"] = "text/html";
-    res.headers["content-length"] = std::to_string(len);
-    const auto headers = res.str();
-    const auto slen = headers.size();
-    DataEvent data{conn, DataEvent::Buffer(headers.begin(), headers.end())};
-    std::cout << "[HTTP] sent headers " << slen << "\n";
-    _server->send(std::move(data));
   }
 
-  void sendBody(ConnectionPtr conn, const char *content, size_t len)
+  void sendResponse(ConnectionPtr conn, HttpResponse res)
   {
-    DataEvent data{conn, DataEvent::Buffer(content, content + len), true};
-    std::cout << "[HTTP] sent body " << len << "\n";
-    _server->send(std::move(data));
+    const auto bodylen = res.body.size();
+    res.headers["content-length"] = std::to_string(bodylen);
+
+    const auto headers_str = res.str();
+
+    DataEvent hdr{conn, DataEvent::Buffer(headers_str.begin(), headers_str.end())};
+    debug("HTTP:send headers", hdr.buffer.size());
+    _server->send(std::move(hdr));
+
+    DataEvent body{conn, DataEvent::Buffer(res.body.begin(), res.body.end()), true};
+    debug("HTTP:send body", body.buffer.size());
+    _server->send(std::move(body));
   }
 
   std::map<int, RequestPtr> _requests;
   TcpServer *_server;
+  std::function<bool(HttpRequest &, HttpResponse &)> _middleware;
 };
 
 } // namespace Netpp::Http

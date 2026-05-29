@@ -38,6 +38,34 @@ int main()
   tcpServer.listen(HOST, CHAT_PORT, &chat);
   tcpServer.listen(HOST, ECHO_PORT, &echo);
 
+  http.addMiddleware([](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res) {
+    bool result = false;
+    if (req.method == "GET" && req.path == "/")
+    {
+      res.status = 200;
+      const char content[] =
+          "<html>\n<head><title>Netpp HTTP Server</title></head>\n<body><h1>Welcome to Netpp HTTP Server</h1></body>\n</html>\n";
+      res.body = std::vector<uint8_t>{content, content + sizeof(content) - 1};
+      result = true;
+    }
+    if (req.method == "GET" && req.path == "/big")
+    {
+      res.status = 200;
+      std::ostringstream ss;
+      ss << "<html>\n<head><title>Big Response</title></head>\n<body><h1>Big Response</h1><p>\n";
+      for (int i = 1; i <= 100000; i++)
+      {
+        ss << "Line aaaa bbbb cccc dddd eeee " << i << "<br>\n";
+      }
+      ss << "</p></body>\n</html>\n";
+      const std::string content = ss.str();
+      res.body = std::vector<uint8_t>{content.begin(), content.end()};
+      result = true;
+    }
+    std::cout << "[HTTP] " << req.method << " " << req.path << " " << res.status << "\n";
+    return result;
+  });
+
   loop.run();
 
   return 0;

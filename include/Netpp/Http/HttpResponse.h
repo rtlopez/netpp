@@ -11,8 +11,9 @@ class HttpResponse
 {
 public:
   std::string version = "0.9";
-  int status = 200;
+  int status = 404;
   std::map<std::string, std::string> headers;
+  std::vector<uint8_t> body;
 
   const std::string str() const
   {
