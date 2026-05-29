@@ -16,6 +16,21 @@ public:
   int status = 404;
   std::map<std::string, std::string> headers;
   std::vector<uint8_t> body;
+  
+  void setBody(std::vector<uint8_t> content)
+  {
+    body = std::move(content);
+  }
+
+  void setBody(const std::string &content)
+  {
+    body = std::vector<uint8_t>(content.begin(), content.end());
+  }  
+
+  void setBody(const char * str, size_t len)
+  {
+    body = std::vector<uint8_t>(str, str + len);
+  }
 
   const std::string str() const
   {

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <functional>
-#include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 #include "Netpp/DataEvent.h"
 #include "Netpp/Http/HttpException.h"
@@ -18,6 +18,8 @@ namespace Netpp::Http
 class HttpProtocol : public Protocol
 {
 public:
+  using MiddlewareCallback = std::function<void(HttpRequest &, HttpResponse &)>;
+
   HttpProtocol(TcpServer *server) : _server(server)
   {
   }
@@ -26,7 +28,7 @@ public:
   {
   }
 
-  void addMiddleware(std::function<bool(HttpRequest &, HttpResponse &)> middleware)
+  void addMiddleware(MiddlewareCallback middleware)
   {
     _middleware = std::move(middleware);
   }
@@ -34,7 +36,7 @@ public:
   void onConnect(ConnectionPtr conn) override
   {
     int s = conn->getId();
-    _requests[s] = std::make_shared<HttpRequest>();
+    _requests.emplace(s, std::make_shared<HttpRequest>());
     debug("HTTP:connect", s, conn->getPeerName());
   }
 
@@ -51,41 +53,42 @@ public:
 
     debug("HTTP:receive", s, data.buffer.size());
 
-    auto req = _requests[s];
+    auto req = _requests.at(s);
     try
     {
       req->receive(reinterpret_cast<const char *>(data.buffer.data()), data.buffer.size());
 
       if (req->headerParsed() && req->bodyReceived())
       {
-        HttpResponse res;
-        initResponse(*req, res);
-        if (!_middleware || !_middleware(*req, res))
+        HttpResponse res = initResponse(*req);
+        if (_middleware)
+        {
+          _middleware(*req, res);
+        }
+        if (res.status == 404)
         {
           static const char content[] =
               "<html>\n<head><title>Not Found</title></head>\n<body><h1>Not Found</h1></body>\n</html>\n";
-          res.body = std::vector<uint8_t>{content, content + sizeof(content) - 1};
+          res.setBody(content, sizeof(content) - 1);
         }
-        sendResponse(data.conn, res);
+        sendResponse(data.conn, std::move(res));
       }
     }
     catch (const HttpException &e)
     {
-      HttpResponse res;
-      initResponse(*req, res);
+      HttpResponse res = initResponse(*req);
       res.status = e.code();
       static const char content[] =
           "<html>\n<head><title>Invalid request</title></head>\n<body><h1>Invalid Request</h1></body>\n</html>\n";
-      res.body = std::vector<uint8_t>{content, content + sizeof(content) - 1};
-      sendResponse(data.conn, res);
+      res.setBody(content, sizeof(content) - 1);
+      sendResponse(data.conn, std::move(res));
     }
   }
 
 private:
-  void initResponse(HttpRequest &req, HttpResponse &res)
+  HttpResponse initResponse(HttpRequest &req)
   {
-    res.version = req.version;
-    res.headers["content-type"] = "text/html";
+    return {.version = req.version, .status = 404, .headers = {{{"content-type", "text/html"}}}, .body = {}};
   }
 
   void sendResponse(ConnectionPtr conn, HttpResponse res)
@@ -104,9 +107,9 @@ private:
     _server->send(std::move(body));
   }
 
-  std::map<int, RequestPtr> _requests;
   TcpServer *_server;
-  std::function<bool(HttpRequest &, HttpResponse &)> _middleware;
+  std::unordered_map<int, RequestPtr> _requests;
+  MiddlewareCallback _middleware;
 };
 
 } // namespace Netpp::Http

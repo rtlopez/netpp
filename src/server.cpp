@@ -1,11 +1,13 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <sstream>
 
 #include "Netpp/Chat/ChatProtocol.h"
 #include "Netpp/Echo/EchoProtocol.h"
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/Http/HttpProtocol.h"
+#include "Netpp/Http/HttpRouter.h"
 #include "Netpp/SignalHandler.h"
 #include "Netpp/SingleThreadDispatcher.h"
 #include "Netpp/TcpServer.h"
@@ -30,40 +32,39 @@ int main()
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
   Netpp::TcpServer tcpServer{&loop, &dispatcher};
 
-  Netpp::Http::HttpProtocol http{&tcpServer};
   Netpp::Chat::ChatProtocol chat{&tcpServer};
   Netpp::Echo::EchoProtocol echo{&tcpServer};
+  Netpp::Http::HttpProtocol http{&tcpServer};
+  Netpp::Http::HttpRouter router;
 
   tcpServer.listen(HOST, HTTP_PORT, &http);
   tcpServer.listen(HOST, CHAT_PORT, &chat);
   tcpServer.listen(HOST, ECHO_PORT, &echo);
 
-  http.addMiddleware([](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res) {
-    bool result = false;
-    if (req.method == "GET" && req.path == "/")
-    {
-      res.status = 200;
-      const char content[] =
-          "<html>\n<head><title>Netpp HTTP Server</title></head>\n<body><h1>Welcome to Netpp HTTP Server</h1></body>\n</html>\n";
-      res.body = std::vector<uint8_t>{content, content + sizeof(content) - 1};
-      result = true;
-    }
-    if (req.method == "GET" && req.path == "/big")
-    {
-      res.status = 200;
-      std::ostringstream ss;
-      ss << "<html>\n<head><title>Big Response</title></head>\n<body><h1>Big Response</h1><p>\n";
-      for (int i = 1; i <= 100000; i++)
-      {
-        ss << "Line aaaa bbbb cccc dddd eeee " << i << "<br>\n";
-      }
-      ss << "</p></body>\n</html>\n";
-      const std::string content = ss.str();
-      res.body = std::vector<uint8_t>{content.begin(), content.end()};
-      result = true;
-    }
+  http.addMiddleware([&router](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res) {
+    router.handle(req, res);
     std::cout << "[HTTP] " << req.method << " " << req.path << " " << res.status << "\n";
-    return result;
+  });
+
+  router.on("GET", "/", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res) {
+    const char content[] =
+        "<html>\n<head><title>Netpp HTTP Server</title></head>\n<body><h1>Welcome to Netpp HTTP Server</h1></body>\n</html>\n";
+    res.setBody(content, sizeof(content) - 1);
+  });
+
+  router.on("GET", "/big", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res) {
+    std::ostringstream ss;
+    ss << "<html>\n<head><title>Big Response</title></head>\n<body><h1>Big Response</h1><p>\n";
+    for (int i = 1; i <= 100000; i++)
+    {
+      ss << " 0x" << std::hex << i << " " << std::dec << i << " ";
+      if (i % 12 == 0)
+      {
+        ss << "\n";
+      }
+    }
+    ss << "</p></body>\n</html>\n";
+    res.setBody(ss.str());
   });
 
   loop.run();
