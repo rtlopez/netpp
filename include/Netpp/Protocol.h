@@ -2,7 +2,6 @@
 
 #include "Connection.h"
 #include "DataEvent.h"
-#include "Sender.h"
 
 namespace Netpp
 {
@@ -10,10 +9,6 @@ namespace Netpp
 class Protocol
 {
 public:
-  Protocol(Sender *sender) : _sender(sender)
-  {
-  }
-
   virtual ~Protocol() = default;
 
   virtual void onConnect(ConnectionPtr conn) = 0;
@@ -23,15 +18,6 @@ public:
   {
     // default implementation does nothing
   }
-
-protected:
-  void send(DataEvent data)
-  {
-    _sender->send(std::move(data));
-  }
-
-private:
-  Sender *_sender;
 };
 
 } // namespace Netpp

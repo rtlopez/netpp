@@ -25,17 +25,18 @@ int main()
   std::signal(SIGPIPE, sigpipe_handler);
 
   Netpp::EventLoopEpoll loop;
-
   Netpp::SingleThreadDispatcher dispatcher;
 
-  Netpp::Http::HttpProtocol http{&dispatcher};
-  Netpp::Chat::ChatProtocol chat{&dispatcher};
-  Netpp::Echo::EchoProtocol echo{&dispatcher};
-
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
-  Netpp::TcpServer httpServer{HOST, HTTP_PORT, &loop, &http, &dispatcher};
-  Netpp::TcpServer chatServer{HOST, CHAT_PORT, &loop, &chat, &dispatcher};
-  Netpp::TcpServer echoServer{HOST, ECHO_PORT, &loop, &echo, &dispatcher};
+  Netpp::TcpServer tcpServer{&loop, &dispatcher};
+
+  Netpp::Http::HttpProtocol http{&tcpServer};
+  Netpp::Chat::ChatProtocol chat{&tcpServer};
+  Netpp::Echo::EchoProtocol echo{&tcpServer};
+
+  tcpServer.listen(HOST, HTTP_PORT, &http);
+  tcpServer.listen(HOST, CHAT_PORT, &chat);
+  tcpServer.listen(HOST, ECHO_PORT, &echo);
 
   loop.run();
 

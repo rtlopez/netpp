@@ -4,6 +4,7 @@
 #include <string>
 
 #include "Netpp/Protocol.h"
+#include "Netpp/TcpServer.h"
 
 namespace Netpp::Echo
 {
@@ -11,7 +12,7 @@ namespace Netpp::Echo
 class EchoProtocol : public Protocol
 {
 public:
-  EchoProtocol(Sender *sender) : Protocol(sender)
+  EchoProtocol(TcpServer *server) : _server(server)
   {
   }
 
@@ -34,7 +35,7 @@ public:
     auto str = std::string(data.buffer.begin(), data.buffer.end());
 
     DataEvent resp{data.conn, DataEvent::Buffer(str.begin(), str.end())};
-    send(std::move(resp));
+    _server->send(std::move(resp));
 
     for (size_t i = 0; i < 2 && !str.empty(); i++)
     {
@@ -47,6 +48,8 @@ public:
 
     std::cout << "[ECHO] new data: " << str << "\n";
   }
+private:
+  TcpServer *_server;
 };
 
 } // namespace Netpp::Echo

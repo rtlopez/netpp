@@ -19,24 +19,27 @@ namespace Netpp
 class TcpServer : public EventLoopHandler
 {
 public:
-  TcpServer(const char *addr, uint16_t port, EventLoop *loop, Protocol *protocol, Dispatcher *dispatcher)
-      : _addr(addr), _port(port), _loop(loop), _protocol(protocol), _dispatcher(dispatcher), _s(-1)
+  TcpServer(EventLoop *loop, Dispatcher *dispatcher) : _loop(loop), _dispatcher(dispatcher)
   {
+  }
+
+  void listen(const char *addr, uint16_t port, Protocol *protocol)
+  {
+    debug("TcpServer::listen", addr, port);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
-    debug("TcpServer", s);
-    Socket::bind(s, _addr, _port);
+    Socket::bind(s, addr, port);
     Socket::listen(s, 128);
-    _s = s;
+    _listeners.emplace(s, protocol);
     _loop->add(s, this);
   }
 
   virtual ~TcpServer()
   {
-    debug("~TcpServer", _s);
-    if (_s >= 0)
+    debug("~TcpServer");
+    for (auto& [s, protocol] : _listeners)
     {
-      _loop->del(_s);
-      Socket::close(_s);
+      _loop->del(s);
+      Socket::close(s);
     }
   }
 
@@ -45,27 +48,31 @@ public:
     auto it = _connections.find(s);
     if (it != _connections.end())
     {
-      _protocol->onError(it->second);
+      auto protocol = _protocols.at(s);
+      protocol->onError(it->second);
     }
     close(s);
   }
 
   virtual void handleReading(sock_t s) override
   {
-    if (s == _s)
+    auto lsi = _listeners.find(s);
+    if (lsi != _listeners.end())
     {
       debug("TcpServer::accept", s);
+      auto protocol = lsi->second;
       sockaddr_in addr;
-      sock_t as = Socket::accept(_s, addr);
+      sock_t as = Socket::accept(s, addr);
       if (as <= 0)
       {
         debug("TcpServer::accept::error", s, as, errno, ::strerror(errno));
         return;
       }
       auto conn = std::make_shared<Connection>(as);
+      _protocols.emplace(as, protocol);
       _connections.emplace(as, conn);
       _dispatcher->onConnect(as);
-      _protocol->onConnect(conn);
+      protocol->onConnect(conn);// protocol
       _loop->add(as, this);
     }
     else
@@ -74,21 +81,22 @@ public:
       if (it != _connections.end())
       {
         auto &conn = it->second;
+        auto protocol = _protocols.at(s);
 
         DataEvent data{conn, DataEvent::Buffer(4096)};
         auto len = Socket::recv(s, data.buffer.data(), data.buffer.size(), 0);
         auto err = errno;
 
-        debug("TcpServer::recv", _s, s, len);
+        debug("TcpServer::recv", s, len);
 
         if (len > 0)
         {
           data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
-          post(std::move(data), _protocol);
+          post(std::move(data), protocol);
         }
         else if (len == 0)
         {
-          debug("TcpServer::recv::disconnect", _s, s);
+          debug("TcpServer::recv::disconnect", s);
           close(s);
         }
         else if (err == EAGAIN || err == EWOULDBLOCK)
@@ -97,13 +105,13 @@ public:
         }
         else
         {
-          debug("TcpServer::recv::error", _s, s, len, err, ::strerror(err));
+          debug("TcpServer::recv::error", s, len, err, ::strerror(err));
           close(s);
         }
       }
       else
       {
-        debug("TcpServer::recv::unknown", _s, s);
+        debug("TcpServer::recv::unknown", s);
         close(s);
       }
     }
@@ -200,6 +208,11 @@ public:
     return true;
   }
 
+  void send(DataEvent data)
+  {
+    _dispatcher->send(std::move(data));
+  }
+
 private:
   void post(DataEvent data, Protocol *target)
   {
@@ -214,7 +227,9 @@ private:
     bool known = it != _connections.end();
     if (known)
     {
-      _protocol->onDisconnect(it->second);
+      auto protocol = _protocols.at(s);
+      protocol->onDisconnect(it->second);
+      _protocols.erase(s);
     }
     _dispatcher->onDisconnect(s);
     if (known)
@@ -222,17 +237,16 @@ private:
       _connections.erase(it);
     }
     // _connections.emplace(as, conn);
+    // _protocols.emplace(as, protocol);
     // _dispatcher->onConnect(as);
     // _protocol->onConnect(conn);
     // _loop->add(as, this);
   }
 
-  const char *_addr;
-  uint16_t _port;
   EventLoop *_loop;
-  Protocol *_protocol;
   Dispatcher *_dispatcher;
-  sock_t _s;
+  std::unordered_map<sock_t, Protocol *> _listeners;
+  std::unordered_map<sock_t, Protocol *> _protocols;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
   struct RecvItem
   {

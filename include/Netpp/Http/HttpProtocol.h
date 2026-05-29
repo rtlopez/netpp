@@ -10,6 +10,7 @@
 #include "Netpp/Http/HttpRequest.h"
 #include "Netpp/Http/HttpResponse.h"
 #include "Netpp/Protocol.h"
+#include "Netpp/TcpServer.h"
 
 namespace Netpp::Http
 {
@@ -17,7 +18,7 @@ namespace Netpp::Http
 class HttpProtocol : public Protocol
 {
 public:
-  HttpProtocol(Sender *sender) : Protocol(sender)
+  HttpProtocol(TcpServer *server) : _server(server)
   {
   }
 
@@ -82,17 +83,18 @@ private:
     const auto slen = headers.size();
     DataEvent data{conn, DataEvent::Buffer(headers.begin(), headers.end())};
     std::cout << "[HTTP] sent headers " << slen << "\n";
-    send(std::move(data));
+    _server->send(std::move(data));
   }
 
   void sendBody(ConnectionPtr conn, const char *content, size_t len)
   {
     DataEvent data{conn, DataEvent::Buffer(content, content + len), true};
     std::cout << "[HTTP] sent body " << len << "\n";
-    send(std::move(data));
+    _server->send(std::move(data));
   }
 
   std::map<int, RequestPtr> _requests;
+  TcpServer *_server;
 };
 
 } // namespace Netpp::Http

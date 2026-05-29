@@ -22,12 +22,12 @@ public:
   static sock_t create(int domain, int type, int protocol)
   {
     sock_t fd = ::socket(domain, type, protocol);
-
-    debug("Socket::create", fd);
+    auto err = errno;
+    debug("Socket::create", domain, type, protocol, fd, err, ::strerror(err));
 
     if (fd < 0)
     {
-      throw SocketException(errno, "socket() failed");
+      throw SocketException(err, "socket() failed");
     }
 
     return fd;
@@ -63,12 +63,12 @@ public:
     addr.sin_addr.s_addr = inet_addr(bind_addr);
 
     int ret = ::bind(fd, (sockaddr *)&addr, addr_len);
-
-    debug("Socket::bind", ret);
+    int err = errno;
+    debug("Socket::bind", fd, ret, err, ::strerror(err));
 
     if (ret < 0)
     {
-      throw SocketException(errno, "bind() failed");
+      throw SocketException(err, "bind() failed");
     }
 
     return ret;
@@ -77,12 +77,12 @@ public:
   static int listen(sock_t fd, int size)
   {
     int ret = ::listen(fd, size);
-
-    debug("Socket::listen", ret);
+    int err = errno;
+    debug("Socket::listen", fd, ret, err, ::strerror(err));
 
     if (ret < 0)
     {
-      throw SocketException(errno, "listen() failed");
+      throw SocketException(err, "listen() failed");
     }
 
     return ret;
@@ -95,7 +95,7 @@ public:
 
     sock_t afd = ::accept(fd, (sockaddr *)&addr, &addr_len);
     int err = errno;
-    debug("Socket::accept", fd, afd, err);
+    debug("Socket::accept", fd, afd, err, ::strerror(err));
 
     if (afd < 0)
     {
@@ -107,10 +107,11 @@ public:
     }
 
     int status = ::fcntl(afd, F_SETFL, ::fcntl(afd, F_GETFL, 0) | O_NONBLOCK);
-    debug("Socket::fcntl", fd, afd, errno);
+    err = errno;
+    debug("Socket::fcntl", fd, afd, err, ::strerror(err));
     if (status < 0)
     {
-      throw SocketException(errno, "fcntl() failed");
+      throw SocketException(err, "fcntl() failed");
     }
 
     return afd;
@@ -120,7 +121,7 @@ public:
   {
     int ret = ::close(fd);
     int err = errno;
-    debug("Socket::close", fd, ret, err);
+    debug("Socket::close", fd, ret, err, ::strerror(err));
     if (ret == -1)
     {
       if (err == EBADF)

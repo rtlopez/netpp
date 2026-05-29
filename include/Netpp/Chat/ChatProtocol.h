@@ -5,6 +5,7 @@
 #include <unordered_set>
 
 #include "Netpp/Protocol.h"
+#include "Netpp/TcpServer.h"
 
 namespace Netpp::Chat
 {
@@ -12,7 +13,7 @@ namespace Netpp::Chat
 class ChatProtocol : public Protocol
 {
 public:
-  ChatProtocol(Sender *sender) : Protocol(sender)
+  ChatProtocol(TcpServer *server) : _server(server)
   {
   }
 
@@ -26,7 +27,7 @@ public:
 
     std::string welcome = "Welcome to the chat room\n";
     DataEvent resp{conn, DataEvent::Buffer(welcome.begin(), welcome.end())};
-    send(std::move(resp));
+    _server->send(std::move(resp));
 
     std::cout << "[CHAT] " << conn->getPeerName() << " joined room\n";
   }
@@ -47,7 +48,7 @@ public:
       if (c != data.conn)
       {
         DataEvent resp{c, DataEvent::Buffer(str.begin(), str.end())};
-        send(std::move(resp));
+        _server->send(std::move(resp));
       }
     }
 
@@ -64,6 +65,7 @@ public:
   }
 
 private:
+  TcpServer *_server;
   std::unordered_set<ConnectionPtr> _clients;
 };
 
