@@ -1,10 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include "Netpp/DataEvent.h"
 
 namespace Netpp::Http
 {
@@ -16,7 +19,8 @@ public:
   int status = 404;
   std::map<std::string, std::string> headers;
   std::vector<uint8_t> body;
-  
+  std::function<DataEvent(void)> generator;
+
   void setBody(std::vector<uint8_t> content)
   {
     body = std::move(content);
@@ -25,19 +29,23 @@ public:
   void setBody(const std::string &content)
   {
     body = std::vector<uint8_t>(content.begin(), content.end());
-  }  
+  }
 
-  void setBody(const char * str, size_t len)
+  void setBody(const char *str, size_t len)
   {
     body = std::vector<uint8_t>(str, str + len);
+  }
+
+  void setGenerator(std::function<DataEvent(void)> gen)
+  {
+    generator = std::move(gen);
   }
 
   const std::string str() const
   {
     std::ostringstream ss;
-
     ss << "HTTP/" << version << ' ' << status << ' ' << codeToMessage(status) << "\r\n";
-    for (const auto& [key, val] : headers)
+    for (const auto &[key, val] : headers)
     {
       ss << key << ": " << val << "\r\n";
     }

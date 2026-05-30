@@ -1,6 +1,5 @@
 #pragma once
 
-#include <unordered_set>
 #include <queue>
 
 #include "Sender.h"
@@ -21,7 +20,6 @@ public:
   virtual void onSendDone(sock_t s) = 0;
 
   virtual std::queue<DataEvent> &getSendQueue(sock_t s) = 0;
-  virtual std::unordered_set<sock_t> getPendingResponses() = 0;
 };
 
 } // namespace Netpp

@@ -18,7 +18,7 @@ namespace Netpp::Http
 class HttpProtocol : public Protocol
 {
 public:
-  using MiddlewareCallback = std::function<void(HttpRequest &, HttpResponse &)>;
+  using MiddlewareCallback = std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)>;
 
   HttpProtocol(TcpServer *server) : _server(server)
   {
@@ -63,7 +63,7 @@ public:
         HttpResponse res = initResponse(*req);
         if (_middleware)
         {
-          _middleware(*req, res);
+          _middleware(*req, res, data.conn);
         }
         if (res.status == 404)
         {
@@ -88,23 +88,37 @@ public:
 private:
   HttpResponse initResponse(HttpRequest &req)
   {
-    return {.version = req.version, .status = 404, .headers = {{{"content-type", "text/html"}}}, .body = {}};
+    HttpResponse res;
+    res.version = req.version;
+    res.status = 404;
+    res.headers = {{"content-type", "text/html"}};
+    return res;
   }
 
   void sendResponse(ConnectionPtr conn, HttpResponse res)
   {
-    const auto bodylen = res.body.size();
-    res.headers["content-length"] = std::to_string(bodylen);
-
+    res.headers["connection"] = std::string("close");
+    if (!res.generator)
+    {
+      res.headers["content-length"] = std::to_string(res.body.size());
+    }
     const auto headers_str = res.str();
 
     DataEvent hdr{conn, DataEvent::Buffer(headers_str.begin(), headers_str.end())};
     debug("HTTP:send headers", hdr.buffer.size());
     _server->send(std::move(hdr));
 
-    DataEvent body{conn, DataEvent::Buffer(res.body.begin(), res.body.end()), true};
-    debug("HTTP:send body", body.buffer.size());
-    _server->send(std::move(body));
+    if (res.generator)
+    {
+      debug("HTTP:send generator");
+      _server->send(std::move(res.generator));
+    }
+    else
+    {
+      DataEvent body{conn, DataEvent::Buffer(res.body.begin(), res.body.end()), true};
+      debug("HTTP:send body", body.buffer.size());
+      _server->send(std::move(body));
+    }
   }
 
   TcpServer *_server;

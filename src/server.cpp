@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include "Netpp/Chat/ChatProtocol.h"
+#include "Netpp/DataEvent.h"
 #include "Netpp/Echo/EchoProtocol.h"
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/Http/HttpProtocol.h"
@@ -41,18 +42,19 @@ int main()
   tcpServer.listen(HOST, CHAT_PORT, &chat);
   tcpServer.listen(HOST, ECHO_PORT, &echo);
 
-  http.addMiddleware([&router](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res) {
-    router.handle(req, res);
-    std::cout << "[HTTP] " << req.method << " " << req.path << " " << res.status << "\n";
-  });
+  http.addMiddleware(
+      [&router](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
+        router.handle(req, res, conn);
+        std::cout << "[HTTP] " << req.method << " " << req.path << " " << res.status << "\n";
+      });
 
-  router.on("GET", "/", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res) {
-    const char content[] =
-        "<html>\n<head><title>Netpp HTTP Server</title></head>\n<body><h1>Welcome to Netpp HTTP Server</h1></body>\n</html>\n";
+  router.on("GET", "/", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
+    const char content[] = "<html>\n<head><title>Netpp HTTP Server</title></head>\n<body>"
+                           "<h1>Welcome to Netpp HTTP Server</h1></body>\n</html>\n";
     res.setBody(content, sizeof(content) - 1);
   });
 
-  router.on("GET", "/big", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res) {
+  router.on("GET", "/big", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
     std::ostringstream ss;
     ss << "<html>\n<head><title>Big Response</title></head>\n<body><h1>Big Response</h1><p>\n";
     for (int i = 1; i <= 100000; i++)
@@ -66,6 +68,15 @@ int main()
     ss << "</p></body>\n</html>\n";
     res.setBody(ss.str());
   });
+
+  router.on("GET", "/stream",
+            [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
+              res.setGenerator([conn, counter = 0]() mutable -> Netpp::DataEvent {
+                counter++;
+                std::string data = "line " + std::to_string(counter) + "\n";
+                return {.conn = conn, .buffer = {data.begin(), data.end()}, .close = counter >= 5};
+              });
+            });
 
   loop.run();
 

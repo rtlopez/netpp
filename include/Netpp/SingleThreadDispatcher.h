@@ -2,7 +2,6 @@
 
 #include <queue>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "Dispatcher.h"
 #include "NetppDebug.h"
@@ -17,7 +16,6 @@ public:
   {
     auto s = data.conn->getId();
     getSendQueue(s).push(std::move(data));
-    _pendingResponses.insert(s);
   }
 
   void onConnect(sock_t s) override
@@ -30,12 +28,10 @@ public:
   {
     debug("SingleThreadDispatcher::onDisconnect", s);
     _sendQueue.erase(s);
-    _pendingResponses.erase(s);
   }
 
-  void onSendDone(sock_t s) override
+  void onSendDone(sock_t) override
   {
-    _pendingResponses.erase(s);
   }
 
   std::queue<DataEvent> &getSendQueue(sock_t s) override
@@ -43,14 +39,8 @@ public:
     return _sendQueue.at(s);
   }
 
-  std::unordered_set<sock_t> getPendingResponses() override
-  {
-    return _pendingResponses;
-  }
-
 private:
   std::unordered_map<sock_t, std::queue<DataEvent>> _sendQueue;
-  std::unordered_set<sock_t> _pendingResponses;
 };
 
 } // namespace Netpp

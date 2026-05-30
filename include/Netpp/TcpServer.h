@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <queue>
 #include <unordered_map>
@@ -97,6 +98,11 @@ public:
         else if (len == 0)
         {
           debug("TcpServer::recv::disconnect", s);
+          if (_generators.contains(s))
+          {
+            debug("TcpServer::recv::disconnect::gen::stop", s);
+            _generators.erase(s);
+          }
           close(s);
         }
         else if (err == EAGAIN || err == EWOULDBLOCK)
@@ -144,10 +150,26 @@ public:
       debug("TcpServer::handleWriting::partial", s);
       break;
     }
+    if (_generators.contains(s))
+    {
+      if (result != DrainResult::Close)
+      {
+        debug("TcpServer::handleWriting::gen:cont", s);
+        auto &generator = _generators.at(s);
+        auto data = generator();
+        send(std::move(data));
+      }
+      else
+      {
+        debug("TcpServer::handleWriting::gen::stop", s);
+        _generators.erase(s);
+      }
+    }
   }
 
   void drainRecv()
   {
+    // this may be executed in separate thread
     debug("TcpServer::drainRecv", _recvQueue.size());
     while (!_recvQueue.empty())
     {
@@ -159,6 +181,7 @@ public:
 
   DrainResult drainSent(sock_t s)
   {
+    // data shoud back here from separate thread
     auto &queue = _dispatcher->getSendQueue(s);
     debug("TcpServer::drainSent", s, queue.size());
     if (queue.empty())
@@ -221,7 +244,7 @@ public:
         else
         {
           debug("TcpServer::flush::error", s, len, err, ::strerror(err));
-          data.close = true; // mark for close
+          data.close = true;              // mark for close
           data.sent = data.buffer.size(); // mark as "done" so close triggers
           return true;
         }
@@ -236,9 +259,17 @@ public:
 
   void send(DataEvent data)
   {
-    auto id = data.conn->getId(); // note std::move later
+    auto s = data.conn->getId(); // note std::move later
     _dispatcher->send(std::move(data));
-    _loop->add(id, this, true); // enable write watching
+    _loop->add(s, this, true); // enable write watching
+  }
+
+  void send(std::function<DataEvent(void)> generator)
+  {
+    auto data = generator();
+    auto s = data.conn->getId(); // note std::move later
+    _generators.emplace(s, std::move(generator));
+    send(std::move(data));
   }
 
 private:
@@ -276,6 +307,8 @@ private:
   std::unordered_map<sock_t, Protocol *> _listeners;
   std::unordered_map<sock_t, Protocol *> _protocols;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
+  std::unordered_map<sock_t, std::function<DataEvent(void)>> _generators;
+
   struct RecvItem
   {
     DataEvent data;

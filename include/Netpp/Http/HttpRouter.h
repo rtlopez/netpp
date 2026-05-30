@@ -14,19 +14,19 @@ public:
   HttpRouter() = default;
   ~HttpRouter() = default;
 
-  void on(const std::string method, const std::string path, std::function<void(HttpRequest &, HttpResponse &)> handler)
+  void on(const std::string method, const std::string path, std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
   {
-    _routes.push_back({std::move(method), std::move(path), std::move(handler)});
+    _routes.emplace_back(std::move(method), std::move(path), std::move(handler));
   }
 
-  void handle(HttpRequest &req, HttpResponse &res)
+  void handle(HttpRequest &req, HttpResponse &res, ConnectionPtr conn)
   {
     for (const auto &route : _routes)
     {
       if (route.match(req.method, req.path))
       {
         res.status = 200;
-        route.handler(req, res);
+        route.handler(req, res, conn);
         return;
       }
     }
@@ -37,7 +37,11 @@ private:
   struct Route {
     std::string method;
     std::string path;
-    std::function<void(HttpRequest &, HttpResponse &)> handler;
+    std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler;
+
+    Route(std::string method, std::string path, std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
+      : method(std::move(method)), path(std::move(path)), handler(std::move(handler)) {}
+
     bool match(const std::string& method, const std::string& path) const {
       return this->method == method && this->path == path;
     }
