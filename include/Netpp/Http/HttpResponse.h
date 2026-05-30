@@ -1,13 +1,13 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
 #include <map>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "Netpp/DataEvent.h"
+#include "Netpp/MoveOnlyFunction.h"
 
 namespace Netpp::Http
 {
@@ -19,7 +19,7 @@ public:
   int status = 404;
   std::map<std::string, std::string> headers;
   std::vector<uint8_t> body;
-  std::function<DataEvent(void)> generator;
+  MoveOnlyFunction<DataEvent(void)> generator;
 
   void setBody(std::vector<uint8_t> content)
   {
@@ -36,7 +36,7 @@ public:
     body = std::vector<uint8_t>(str, str + len);
   }
 
-  void setGenerator(std::function<DataEvent(void)> gen)
+  void setGenerator(MoveOnlyFunction<DataEvent(void)> gen)
   {
     generator = std::move(gen);
   }

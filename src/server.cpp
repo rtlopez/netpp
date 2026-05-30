@@ -1,12 +1,14 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <sstream>
 
 #include "Netpp/Chat/ChatProtocol.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/Echo/EchoProtocol.h"
 #include "Netpp/EventLoopEpoll.h"
+#include "Netpp/FileStream.h"
 #include "Netpp/Http/HttpProtocol.h"
 #include "Netpp/Http/HttpRouter.h"
 #include "Netpp/SignalHandler.h"
@@ -71,12 +73,29 @@ int main()
 
   router.on("GET", "/stream",
             [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
+              std::cout << "[HTTP] /stream" << std::endl;
               res.setGenerator([conn, counter = 0]() mutable -> Netpp::DataEvent {
                 counter++;
                 std::string data = "line " + std::to_string(counter) + "\n";
                 return {.conn = conn, .buffer = {data.begin(), data.end()}, .close = counter >= 5};
               });
             });
+
+  router.on("GET", "/file", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
+    std::filesystem::path filename = "src/server.cpp";
+    std::cout << "[HTTP] " << filename << std::endl;
+    if (!std::filesystem::is_regular_file(filename))
+    {
+      res.status = 404;
+      return;
+    }
+    auto size = std::filesystem::file_size(filename);
+    std::cout << "[HTTP] file size: " << size << std::endl;
+    res.headers["content-length"] = std::to_string(size);
+    res.headers["content-type"] = "text/plain";
+
+    res.setGenerator(Netpp::FileStream{conn, filename.string()});
+  });
 
   loop.run();
 

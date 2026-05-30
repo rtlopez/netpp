@@ -1,9 +1,10 @@
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <queue>
 #include <unordered_map>
+
+#include "Netpp/MoveOnlyFunction.h"
 
 #include "Netpp/Connection.h"
 #include "Netpp/DataEvent.h"
@@ -264,7 +265,7 @@ public:
     _loop->add(s, this, true); // enable write watching
   }
 
-  void send(std::function<DataEvent(void)> generator)
+  void send(MoveOnlyFunction<DataEvent(void)> generator)
   {
     auto data = generator();
     auto s = data.conn->getId(); // note std::move later
@@ -307,7 +308,7 @@ private:
   std::unordered_map<sock_t, Protocol *> _listeners;
   std::unordered_map<sock_t, Protocol *> _protocols;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
-  std::unordered_map<sock_t, std::function<DataEvent(void)>> _generators;
+  std::unordered_map<sock_t, MoveOnlyFunction<DataEvent(void)>> _generators;
 
   struct RecvItem
   {
