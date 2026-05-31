@@ -8,8 +8,11 @@ add_compile_options(-Wall -Wextra)
 
 include_directories(include/)
 
+find_package(Threads REQUIRED)
+
 # server example
 add_executable(server src/server.cpp)
+target_link_libraries(server Threads::Threads)
 
 # client example
 add_executable(client src/client.cpp)

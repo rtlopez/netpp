@@ -1,8 +1,12 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <unordered_map>
+
+#include <sys/eventfd.h>
+#include <unistd.h>
 
 #include "Netpp/MoveOnlyFunction.h"
 
@@ -21,8 +25,13 @@ namespace Netpp
 class TcpServer : public EventLoopHandler
 {
 public:
-  TcpServer(EventLoop *loop, Dispatcher *dispatcher) : _loop(loop), _dispatcher(dispatcher)
+  TcpServer(EventLoop *loop, Dispatcher *dispatcher) : _loop(loop), _dispatcher(dispatcher), _notifyFd(-1)
   {
+    _notifyFd = _dispatcher->getNotifyFd();
+    if (_notifyFd >= 0)
+    {
+      _loop->add(_notifyFd, this);
+    }
   }
 
   void listen(const char *addr, uint16_t port, Protocol *protocol)
@@ -38,6 +47,10 @@ public:
   virtual ~TcpServer()
   {
     debug("~TcpServer");
+    if (_notifyFd >= 0)
+    {
+      _loop->del(_notifyFd);
+    }
     for (auto &[s, protocol] : _listeners)
     {
       _loop->del(s);
@@ -58,6 +71,21 @@ public:
 
   virtual void handleReading(sock_t s) override
   {
+    if (s == _notifyFd)
+    {
+      uint64_t val;
+      ::read(_notifyFd, &val, sizeof(val));
+      auto sockets = _dispatcher->drainPendingWrites();
+      for (auto ws : sockets)
+      {
+        if (_connections.contains(ws))
+        {
+          _loop->add(ws, this, true);
+        }
+      }
+      return;
+    }
+
     auto lsi = _listeners.find(s);
     if (lsi != _listeners.end())
     {
@@ -94,15 +122,20 @@ public:
         if (len > 0)
         {
           data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
-          post(std::move(data), protocol);
+          _dispatcher->postRecv([protocol, data = std::move(data)]() mutable {
+            protocol->onReceive(std::move(data));
+          });
         }
         else if (len == 0)
         {
           debug("TcpServer::recv::disconnect", s);
-          if (_generators.contains(s))
           {
-            debug("TcpServer::recv::disconnect::gen::stop", s);
-            _generators.erase(s);
+            std::lock_guard<std::mutex> lock(_generatorsMutex);
+            if (_generators.contains(s))
+            {
+              debug("TcpServer::recv::disconnect::gen::stop", s);
+              _generators.erase(s);
+            }
           }
           close(s);
         }
@@ -122,8 +155,6 @@ public:
         close(s);
       }
     }
-
-    drainRecv();
   }
 
   enum DrainResult
@@ -136,7 +167,11 @@ public:
   virtual void handleWriting(sock_t s) override
   {
     debug("TcpServer::handleWriting", s);
-    auto result = drainSent(s);
+    DrainResult result;
+    {
+      auto sendLock = _dispatcher->lockSend(s);
+      result = drainSent(s);
+    }
     switch (result)
     {
     case DrainResult::Done:
@@ -151,38 +186,39 @@ public:
       debug("TcpServer::handleWriting::partial", s);
       break;
     }
-    if (_generators.contains(s))
     {
-      if (result != DrainResult::Close)
+      std::lock_guard<std::mutex> lock(_generatorsMutex);
+      if (_generators.contains(s))
       {
-        debug("TcpServer::handleWriting::gen:cont", s);
-        auto &generator = _generators.at(s);
-        auto data = generator();
-        send(std::move(data));
-      }
-      else
-      {
-        debug("TcpServer::handleWriting::gen::stop", s);
-        _generators.erase(s);
+        if (result != DrainResult::Close)
+        {
+          debug("TcpServer::handleWriting::gen:cont", s);
+          _dispatcher->postRecv([this, s] {
+            DataEvent data;
+            {
+              std::lock_guard<std::mutex> lock(_generatorsMutex);
+              auto it = _generators.find(s);
+              if (it == _generators.end())
+              {
+                return;
+              }
+              data = it->second();
+            }
+            send(std::move(data));
+          });
+        }
+        else
+        {
+          debug("TcpServer::handleWriting::gen::stop", s);
+          _generators.erase(s);
+        }
       }
     }
   }
 
-  void drainRecv()
-  {
-    // this may be executed in separate thread
-    debug("TcpServer::drainRecv", _recvQueue.size());
-    while (!_recvQueue.empty())
-    {
-      auto &item = _recvQueue.front();
-      item.target->onReceive(std::move(item.data));
-      _recvQueue.pop();
-    }
-  }
 
   DrainResult drainSent(sock_t s)
   {
-    // data shoud back here from separate thread
     auto &queue = _dispatcher->getSendQueue(s);
     debug("TcpServer::drainSent", s, queue.size());
     if (queue.empty())
@@ -198,7 +234,6 @@ public:
       if (data.close && drained)
       {
         queue.pop();
-        _dispatcher->onSendDone(s);
         return DrainResult::Close;
       }
 
@@ -219,7 +254,6 @@ public:
 
       queue.pop();
     }
-    _dispatcher->onSendDone(s);
     return DrainResult::Done;
   }
 
@@ -262,23 +296,25 @@ public:
   {
     auto s = data.conn->getId(); // note std::move later
     _dispatcher->send(std::move(data));
-    _loop->add(s, this, true); // enable write watching
+    if (_notifyFd < 0)
+    {
+      _loop->add(s, this, true); // single-thread: enable write watching directly
+    }
+    // in threaded mode, ThreadPoolDispatcher::send() notifies via eventfd
   }
 
   void send(MoveOnlyFunction<DataEvent(void)> generator)
   {
     auto data = generator();
     auto s = data.conn->getId(); // note std::move later
-    _generators.emplace(s, std::move(generator));
+    {
+      std::lock_guard<std::mutex> lock(_generatorsMutex);
+      _generators.emplace(s, std::move(generator));
+    }
     send(std::move(data));
   }
 
 private:
-  void post(DataEvent data, Protocol *target)
-  {
-    _recvQueue.push({std::move(data), target});
-  }
-
   void close(sock_t s)
   {
     debug("TcpServer::close", s);
@@ -305,18 +341,12 @@ private:
 
   EventLoop *_loop;
   Dispatcher *_dispatcher;
+  sock_t _notifyFd;
   std::unordered_map<sock_t, Protocol *> _listeners;
   std::unordered_map<sock_t, Protocol *> _protocols;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
   std::unordered_map<sock_t, MoveOnlyFunction<DataEvent(void)>> _generators;
-
-  struct RecvItem
-  {
-    DataEvent data;
-    Protocol *target;
-  };
-
-  std::queue<RecvItem> _recvQueue;
+  std::mutex _generatorsMutex;
 };
 
 } // namespace Netpp

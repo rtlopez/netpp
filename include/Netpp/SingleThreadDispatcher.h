@@ -30,10 +30,6 @@ public:
     _sendQueue.erase(s);
   }
 
-  void onSendDone(sock_t) override
-  {
-  }
-
   std::queue<DataEvent> &getSendQueue(sock_t s) override
   {
     return _sendQueue.at(s);

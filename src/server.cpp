@@ -12,7 +12,8 @@
 #include "Netpp/Http/HttpProtocol.h"
 #include "Netpp/Http/HttpRouter.h"
 #include "Netpp/SignalHandler.h"
-#include "Netpp/SingleThreadDispatcher.h"
+// #include "Netpp/SingleThreadDispatcher.h"
+#include "Netpp/ThreadPoolDispatcher.h"
 #include "Netpp/TcpServer.h"
 
 static const char *HOST = "127.0.0.1";
@@ -30,7 +31,8 @@ int main()
   std::signal(SIGPIPE, sigpipe_handler);
 
   Netpp::EventLoopEpoll loop;
-  Netpp::SingleThreadDispatcher dispatcher;
+  // Netpp::SingleThreadDispatcher dispatcher;
+  Netpp::ThreadPoolDispatcher dispatcher(16); // 8 worker threads
 
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
   Netpp::TcpServer tcpServer{&loop, &dispatcher};
