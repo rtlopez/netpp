@@ -40,7 +40,7 @@ public:
   virtual ~ThreadPoolDispatcher()
   {
     {
-      std::lock_guard<std::mutex> lock(_taskMutex);
+      std::scoped_lock lock(_taskMutex);
       _stop = true;
     }
     _taskCv.notify_all();
@@ -65,7 +65,7 @@ public:
   {
     auto s = data.conn->getId();
     {
-      std::lock_guard<std::mutex> lock(_sendMutex);
+      std::scoped_lock lock(_sendMutex);
       auto it = _sendQueues.find(s);
       if (it == _sendQueues.end())
       {
@@ -79,14 +79,14 @@ public:
   void onConnect(sock_t s) override
   {
     debug("ThreadPoolDispatcher::onConnect", s);
-    std::lock_guard<std::mutex> lock(_sendMutex);
+    std::scoped_lock lock(_sendMutex);
     _sendQueues.emplace(s, std::queue<DataEvent>{});
   }
 
   void onDisconnect(sock_t s) override
   {
     debug("ThreadPoolDispatcher::onDisconnect", s);
-    std::lock_guard<std::mutex> lock(_sendMutex);
+    std::scoped_lock lock(_sendMutex);
     _sendQueues.erase(s);
   }
 
@@ -109,7 +109,7 @@ public:
 
   std::vector<sock_t> drainPendingWrites() override
   {
-    std::lock_guard<std::mutex> lock(_notifyMutex);
+    std::scoped_lock lock(_pendingWritesMutex);
     std::vector<sock_t> result(_pendingWrites.begin(), _pendingWrites.end());
     _pendingWrites.clear();
     return result;
@@ -118,8 +118,8 @@ public:
   void postRecv(MoveOnlyFunction<void()> task) override
   {
     {
-      std::lock_guard<std::mutex> lock(_taskMutex);
-      _recvQueue.push(std::move(task));
+      std::scoped_lock lock(_taskMutex);
+      _taskQueue.push(std::move(task));
     }
     _taskCv.notify_one();
   }
@@ -132,13 +132,13 @@ private:
       MoveOnlyFunction<void()> task;
       {
         std::unique_lock<std::mutex> lock(_taskMutex);
-        _taskCv.wait(lock, [this] { return _stop || !_recvQueue.empty(); });
-        if (_stop && _recvQueue.empty())
+        _taskCv.wait(lock, [this] { return _stop || !_taskQueue.empty(); });
+        if (_stop && _taskQueue.empty())
         {
           return;
         }
-        task = std::move(_recvQueue.front());
-        _recvQueue.pop();
+        task = std::move(_taskQueue.front());
+        _taskQueue.pop();
       }
       task();
     }
@@ -147,7 +147,7 @@ private:
   void notifyWrite(sock_t s)
   {
     {
-      std::lock_guard<std::mutex> lock(_notifyMutex);
+      std::scoped_lock lock(_pendingWritesMutex);
       _pendingWrites.insert(s);
     }
     uint64_t val = 1;
@@ -159,7 +159,7 @@ private:
   bool _stop;
 
   // Recv/task queue (main thread produces, workers consume)
-  std::queue<MoveOnlyFunction<void()>> _recvQueue;
+  std::queue<MoveOnlyFunction<void()>> _taskQueue;
   std::mutex _taskMutex;
   std::condition_variable _taskCv;
 
@@ -170,7 +170,7 @@ private:
   // Notification
   sock_t _eventFd;
   std::unordered_set<sock_t> _pendingWrites;
-  std::mutex _notifyMutex;
+  std::mutex _pendingWritesMutex;
 };
 
 } // namespace Netpp

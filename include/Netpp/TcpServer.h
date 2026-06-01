@@ -130,7 +130,7 @@ public:
         {
           debug("TcpServer::recv::disconnect", s);
           {
-            std::lock_guard<std::mutex> lock(_generatorsMutex);
+            std::scoped_lock lock(_generatorsMutex);
             if (_generators.contains(s))
             {
               debug("TcpServer::recv::disconnect::gen::stop", s);
@@ -187,7 +187,7 @@ public:
       break;
     }
     {
-      std::lock_guard<std::mutex> lock(_generatorsMutex);
+      std::scoped_lock lock(_generatorsMutex);
       if (_generators.contains(s))
       {
         if (result != DrainResult::Close)
@@ -196,7 +196,7 @@ public:
           _dispatcher->postRecv([this, s] {
             DataEvent data;
             {
-              std::lock_guard<std::mutex> lock(_generatorsMutex);
+              std::scoped_lock lock(_generatorsMutex);
               auto it = _generators.find(s);
               if (it == _generators.end())
               {
@@ -308,7 +308,7 @@ public:
     auto data = generator();
     auto s = data.conn->getId(); // note std::move later
     {
-      std::lock_guard<std::mutex> lock(_generatorsMutex);
+      std::scoped_lock lock(_generatorsMutex);
       _generators.emplace(s, std::move(generator));
     }
     send(std::move(data));
