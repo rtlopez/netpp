@@ -64,7 +64,10 @@ public:
     if (it != _connections.end())
     {
       auto protocol = _protocols.at(s);
-      protocol->onError(it->second);
+      auto conn = it->second;
+      //_dispatcher->postRecv([protocol, conn] {
+        protocol->onError(conn);
+      //});
     }
     close(s);
   }
@@ -103,7 +106,9 @@ public:
       _connections.emplace(as, conn);
       _loop->add(as, this);
       _dispatcher->onConnect(as);
-      protocol->onConnect(conn);
+      //_dispatcher->postRecv([protocol, conn] {
+        protocol->onConnect(conn);
+      //});
     }
     else
     {
@@ -323,7 +328,10 @@ private:
     if (known)
     {
       auto protocol = _protocols.at(s);
-      protocol->onDisconnect(it->second);
+      auto conn = it->second;
+      //_dispatcher->postRecv([protocol, conn] {
+        protocol->onDisconnect(conn);
+      //});
       _protocols.erase(s);
     }
     _dispatcher->onDisconnect(s);

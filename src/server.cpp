@@ -31,10 +31,11 @@ int main()
   std::signal(SIGPIPE, sigpipe_handler);
 
   Netpp::EventLoopEpoll loop;
-  // Netpp::SingleThreadDispatcher dispatcher;
-  Netpp::ThreadPoolDispatcher dispatcher(16); // 8 worker threads
 
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
+
+  // Netpp::SingleThreadDispatcher dispatcher;
+  Netpp::ThreadPoolDispatcher dispatcher(16); // 8 worker threads
   Netpp::TcpServer tcpServer{&loop, &dispatcher};
 
   Netpp::Chat::ChatProtocol chat{&tcpServer};

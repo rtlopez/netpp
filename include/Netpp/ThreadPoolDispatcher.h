@@ -39,6 +39,7 @@ public:
 
   virtual ~ThreadPoolDispatcher()
   {
+    debug("~ThreadPoolDispatcher", _eventFd);
     {
       std::scoped_lock lock(_taskMutex);
       _stop = true;
