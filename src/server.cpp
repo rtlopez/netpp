@@ -85,18 +85,26 @@ int main()
 
   router.on("GET", "/file", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
     std::filesystem::path filename = "src/server.cpp";
-    std::cout << "[HTTP] " << filename << std::endl;
+    // std::cout << "[HTTP] " << filename << std::endl;
     if (!std::filesystem::is_regular_file(filename))
     {
       res.status = 404;
       return;
     }
+
+    std::ifstream file(filename, std::ios::binary | std::ios::in);
+    if (!file)
+    {
+      res.status = 500;
+      return;
+    }
     auto size = std::filesystem::file_size(filename);
-    std::cout << "[HTTP] file size: " << size << std::endl;
+    // std::cout << "[HTTP] file size: " << size << std::endl;
+    
     res.headers["content-length"] = std::to_string(size);
     res.headers["content-type"] = "text/plain";
 
-    res.setGenerator(Netpp::FileStream{conn, filename.string()});
+    res.setGenerator(Netpp::FileStream{conn, filename.string(), std::move(file)});
   });
 
   loop.run();
