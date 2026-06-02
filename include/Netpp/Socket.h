@@ -9,10 +9,14 @@
 #include <string>
 
 #include "Netpp/Exception.h"
-#include "Netpp/NetppDebug.h"
+#include "Netpp/Logger/Logger.h"
 
 namespace Netpp
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *SOCKET = "socket";
 
 using sock_t = int;
 
@@ -23,12 +27,13 @@ public:
   {
     sock_t fd = ::socket(domain, type, protocol);
     auto err = errno;
-    debug("Socket::create", domain, type, protocol, fd, err, ::strerror(err));
-
     if (fd < 0)
     {
+      logger(SOCKET, LogLevel::ERROR).log(domain, type, protocol, fd, err, ::strerror(err));
       throw SocketException(err, "socket() failed");
     }
+
+    logger(SOCKET, LogLevel::TRACE).log(domain, type, protocol, fd);
 
     return fd;
   }
@@ -64,12 +69,14 @@ public:
 
     int ret = ::bind(fd, (sockaddr *)&addr, addr_len);
     int err = errno;
-    debug("Socket::bind", fd, ret, err, ::strerror(err));
 
     if (ret < 0)
     {
+      logger(SOCKET, LogLevel::ERROR).log(fd, ret, err, ::strerror(err));
       throw SocketException(err, "bind() failed");
     }
+
+    logger(SOCKET, LogLevel::TRACE).log(fd, ret);
 
     return ret;
   }
@@ -78,12 +85,14 @@ public:
   {
     int ret = ::listen(fd, size);
     int err = errno;
-    debug("Socket::listen", fd, ret, err, ::strerror(err));
 
     if (ret < 0)
     {
+      logger(SOCKET, LogLevel::ERROR).log(fd, ret, err, ::strerror(err));
       throw SocketException(err, "listen() failed");
     }
+
+    logger(SOCKET, LogLevel::TRACE).log(fd, ret);
 
     return ret;
   }
@@ -95,10 +104,10 @@ public:
 
     sock_t afd = ::accept(fd, (sockaddr *)&addr, &addr_len);
     int err = errno;
-    debug("Socket::accept", fd, afd, err, ::strerror(err));
 
     if (afd < 0)
     {
+      logger(SOCKET, LogLevel::ERROR).log(fd, afd, err, ::strerror(err));
       if (err == EAGAIN)
       {
         return 0;
@@ -108,18 +117,19 @@ public:
 
     int status = ::fcntl(afd, F_SETFL, ::fcntl(afd, F_GETFL, 0) | O_NONBLOCK);
     err = errno;
-    debug("Socket::fcntl(O_NONBLOCK)", fd, afd, err, ::strerror(err));
     if (status < 0)
     {
+      logger(SOCKET, LogLevel::ERROR).log("fcntl(O_NONBLOCK) failed", fd, afd, err, ::strerror(err));
       throw SocketException(err, "fcntl(O_NONBLOCK) failed");
     }
+
+    logger(SOCKET, LogLevel::TRACE).log(fd, afd);
 
     // struct linger sl;
     // sl.l_onoff = 0;  // disable linger
     // sl.l_linger = 1; // timeout in seconds
     // status = ::setsockopt(afd, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl));
     // err = errno;
-    // debug("Socket::setsockopt(SO_LINGER)", fd, afd, err, ::strerror(err));
     // if (status < 0)
     // {
     //   throw SocketException(err, "setsockopt(SO_LINGER) failed");
@@ -135,7 +145,7 @@ public:
     int err = errno;
     if (ret < 0)
     {
-      debug("Socket::close", fd, ret, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR).log("close() failed", fd, ret, err, ::strerror(err));
       if (err == EBADF)
       {
         throw SocketException(err, "close() failed");
@@ -143,7 +153,7 @@ public:
     }
     else
     {
-      debug("Socket::close", fd, ret);
+      logger(SOCKET, LogLevel::TRACE).log(fd, ret);
     }
     return 0;
   }

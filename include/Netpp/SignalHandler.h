@@ -9,17 +9,20 @@
 #include "Netpp/EventLoop.h"
 #include "Netpp/EventLoopHandler.h"
 #include "Netpp/Exception.h"
-#include "Netpp/NetppDebug.h"
+#include "Netpp/Logger/Logger.h"
 #include "Netpp/Socket.h"
 
 namespace Netpp
 {
 
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *SIGNAL = "signal";
+
 class SignalHandler : public EventLoopHandler
 {
 public:
-  SignalHandler(EventLoop *loop, std::initializer_list<int> signals)
-      : _loop(loop), _fd(-1)
+  SignalHandler(EventLoop *loop, std::initializer_list<int> signals) : _loop(loop), _fd(-1)
   {
     sigset_t mask;
     sigemptyset(&mask);
@@ -39,13 +42,13 @@ public:
       throw EventLoopException(errno, "signalfd() failed");
     }
 
-    debug("SignalHandler", _fd);
+    logger(SIGNAL, LogLevel::DEBUG).log(_fd);
     _loop->add(_fd, this);
   }
 
   ~SignalHandler()
   {
-    debug("~SignalHandler", _fd);
+    logger(SIGNAL, LogLevel::DEBUG).log(_fd);
     if (_fd >= 0)
     {
       _loop->del(_fd);
@@ -59,14 +62,14 @@ public:
     ssize_t len = ::read(s, &info, sizeof(info));
     if (len == sizeof(info))
     {
-      debug("SignalHandler", "signal", info.ssi_signo);
-      std::printf("Caught signal %d, shutting down...\n", info.ssi_signo);
+      logger(SIGNAL, LogLevel::INFO).log("Caught signal", info.ssi_signo);
       _loop->stop();
     }
   }
 
-  void handleError(sock_t) override
+  void handleError(sock_t s) override
   {
+    logger(SIGNAL, LogLevel::ERROR).log("Error in signal handler", s);
     _loop->stop();
   }
 

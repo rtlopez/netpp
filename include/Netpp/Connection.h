@@ -3,22 +3,27 @@
 #include <memory>
 #include <string>
 
+#include "Netpp/Logger/Logger.h"
 #include "Socket.h"
 
 namespace Netpp
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *CONNECTION = "connection";
 
 class Connection
 {
 public:
   Connection(sock_t s) : _s(s)
   {
-    debug("Connection", _s);
+    logger(CONNECTION, LogLevel::DEBUG).log(_s);
   }
 
   virtual ~Connection()
   {
-    debug("~Connection", _s);
+    logger(CONNECTION, LogLevel::DEBUG).log(_s);
     if (_s >= 0)
     {
       Socket::close(_s);

@@ -1,13 +1,17 @@
 #pragma once
 
-#include <iostream>
 #include <string>
 
+#include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/TcpServer.h"
 
 namespace Netpp::Echo
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *ECHO = "echo";
 
 class EchoProtocol : public Protocol
 {
@@ -22,12 +26,12 @@ public:
 
   void onConnect(ConnectionPtr conn) override
   {
-    std::cout << "[ECHO] conn accept: " << conn->getPeerName() << "\n";
+    logger(ECHO, LogLevel::DEBUG).log(conn->getPeerName());
   }
 
   void onDisconnect(ConnectionPtr conn) override
   {
-    std::cout << "[ECHO] conn close: " << conn->getPeerName() << "\n";
+    logger(ECHO, LogLevel::DEBUG).log(conn->getPeerName());
   }
 
   void onReceive(DataEvent data) override
@@ -46,8 +50,9 @@ public:
       }
     }
 
-    std::cout << "[ECHO] new data: " << str << "\n";
+    logger(ECHO, LogLevel::DEBUG).log(str);
   }
+
 private:
   TcpServer *_server;
 };

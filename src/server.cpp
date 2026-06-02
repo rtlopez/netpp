@@ -15,6 +15,11 @@
 // #include "Netpp/SingleThreadDispatcher.h"
 #include "Netpp/ThreadPoolDispatcher.h"
 #include "Netpp/TcpServer.h"
+#include "Netpp/Logger/Logger.h"
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char* SERVER = "server";
 
 static const char *HOST = "127.0.0.1";
 static constexpr uint16_t HTTP_PORT = 1234;
@@ -23,11 +28,13 @@ static constexpr uint16_t ECHO_PORT = 1236;
 
 void sigpipe_handler(int signum)
 {
-  std::printf("Caught signal SIGPIPE %d\n", signum);
+  logger(SERVER, LogLevel::INFO).log("SIGPIPE caught", signum);
 }
 
 int main()
 {
+  logger(SERVER, LogLevel::INFO).log("Starting server");
+
   std::signal(SIGPIPE, sigpipe_handler);
 
   Netpp::EventLoopEpoll loop;
@@ -50,7 +57,7 @@ int main()
   http.addMiddleware(
       [&router](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
         router.handle(req, res, conn);
-        std::cout << "[HTTP] " << req.method << " " << req.path << " " << res.status << "\n";
+        logger(SERVER, LogLevel::INFO).log("HTTP", conn->getPeerName(), req.method, req.path, res.status);
       });
 
   router.on("GET", "/", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
@@ -76,7 +83,7 @@ int main()
 
   router.on("GET", "/stream",
             [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
-              std::cout << "[HTTP] /stream" << std::endl;
+              logger(SERVER, LogLevel::INFO).log("[HTTP]", "/stream");
               res.setGenerator([conn, counter = 0]() mutable -> Netpp::DataEvent {
                 counter++;
                 std::string data = "line " + std::to_string(counter) + "\n";
@@ -109,6 +116,8 @@ int main()
   });
 
   loop.run();
+
+  logger(SERVER, LogLevel::INFO).log("Server stopping");
 
   return 0;
 }

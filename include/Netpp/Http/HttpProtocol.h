@@ -9,11 +9,16 @@
 #include "Netpp/Http/HttpException.h"
 #include "Netpp/Http/HttpRequest.h"
 #include "Netpp/Http/HttpResponse.h"
+#include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/TcpServer.h"
 
 namespace Netpp::Http
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *HTTP = "http";
 
 class HttpProtocol : public Protocol
 {
@@ -37,13 +42,13 @@ public:
   {
     int s = conn->getId();
     _requests.emplace(s, std::make_shared<HttpRequest>());
-    debug("HTTP:connect", s, conn->getPeerName());
+    logger(HTTP, LogLevel::DEBUG).log(s, conn->getPeerName());
   }
 
   void onDisconnect(ConnectionPtr conn) override
   {
     int s = conn->getId();
-    debug("HTTP:disconnect", s, conn->getPeerName());
+    logger(HTTP, LogLevel::DEBUG).log(s, conn->getPeerName());
     _requests.erase(s);
   }
 
@@ -51,7 +56,7 @@ public:
   {
     int s = data.conn->getId();
 
-    debug("HTTP:receive", s, data.buffer.size());
+    logger(HTTP, LogLevel::DEBUG).log(s, data.buffer.size());
 
     auto req = _requests.at(s);
     try
@@ -105,18 +110,18 @@ private:
     const auto headers_str = res.str();
 
     DataEvent hdr{conn, DataEvent::Buffer(headers_str.begin(), headers_str.end())};
-    debug("HTTP:send headers", hdr.buffer.size());
+    logger(HTTP, LogLevel::DEBUG).log("headers", hdr.buffer.size());
     _server->send(std::move(hdr));
 
     if (res.generator)
     {
-      debug("HTTP:send generator");
+      logger(HTTP, LogLevel::DEBUG).log("generator");
       _server->send(std::move(res.generator));
     }
     else
     {
       DataEvent body{conn, DataEvent::Buffer(res.body.begin(), res.body.end()), true};
-      debug("HTTP:send body", body.buffer.size());
+      logger(HTTP, LogLevel::DEBUG).log("body", body.buffer.size());
       _server->send(std::move(body));
     }
   }

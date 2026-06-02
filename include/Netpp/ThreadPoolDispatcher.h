@@ -13,10 +13,14 @@
 
 #include "Dispatcher.h"
 #include "MoveOnlyFunction.h"
-#include "NetppDebug.h"
+#include "Netpp/Logger/Logger.h"
 
 namespace Netpp
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *DISPATCH = "dispatch";
 
 class ThreadPoolDispatcher : public Dispatcher
 {
@@ -29,7 +33,7 @@ public:
       throw std::runtime_error("eventfd() failed");
     }
 
-    debug("ThreadPoolDispatcher", numThreads, _eventFd);
+    logger(DISPATCH, LogLevel::DEBUG).log(numThreads, _eventFd);
 
     for (size_t i = 0; i < numThreads; i++)
     {
@@ -39,7 +43,7 @@ public:
 
   virtual ~ThreadPoolDispatcher()
   {
-    debug("~ThreadPoolDispatcher", _eventFd);
+    logger(DISPATCH, LogLevel::DEBUG).log(_eventFd);
     {
       std::scoped_lock lock(_taskMutex);
       _stop = true;
@@ -79,14 +83,14 @@ public:
 
   void onConnect(sock_t s) override
   {
-    debug("ThreadPoolDispatcher::onConnect", s);
+    logger(DISPATCH, LogLevel::DEBUG).log(s);
     std::scoped_lock lock(_sendMutex);
     _sendQueues.emplace(s, std::queue<DataEvent>{});
   }
 
   void onDisconnect(sock_t s) override
   {
-    debug("ThreadPoolDispatcher::onDisconnect", s);
+    logger(DISPATCH, LogLevel::DEBUG).log(s);
     std::scoped_lock lock(_sendMutex);
     _sendQueues.erase(s);
   }

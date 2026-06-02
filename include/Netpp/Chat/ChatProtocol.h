@@ -1,14 +1,18 @@
 #pragma once
 
-#include <iostream>
 #include <string>
 #include <unordered_set>
 
+#include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/TcpServer.h"
 
 namespace Netpp::Chat
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *CHAT = "chat";
 
 class ChatProtocol : public Protocol
 {
@@ -29,14 +33,14 @@ public:
     DataEvent resp{conn, DataEvent::Buffer(welcome.begin(), welcome.end())};
     _server->send(std::move(resp));
 
-    std::cout << "[CHAT] " << conn->getPeerName() << " joined room\n";
+    logger(CHAT, LogLevel::DEBUG).log(conn->getPeerName());
   }
 
   void onDisconnect(ConnectionPtr conn) override
   {
     _clients.erase(conn);
 
-    std::cout << "[CHAT] " << conn->getPeerName() << " left room\n";
+    logger(CHAT, LogLevel::DEBUG).log(conn->getPeerName());
   }
 
   void onReceive(DataEvent data) override
@@ -61,7 +65,7 @@ public:
       }
     }
 
-    std::cout << "[CHAT] new data: " << str << "\n";
+    logger(CHAT, LogLevel::DEBUG).log(str);
   }
 
 private:

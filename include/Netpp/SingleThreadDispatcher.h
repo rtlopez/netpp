@@ -4,10 +4,14 @@
 #include <unordered_map>
 
 #include "Dispatcher.h"
-#include "NetppDebug.h"
+#include "Netpp/Logger/Logger.h"
 
 namespace Netpp
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *DISPATCH = "dispatch";
 
 class SingleThreadDispatcher : public Dispatcher
 {
@@ -20,13 +24,13 @@ public:
 
   void onConnect(sock_t s) override
   {
-    debug("SingleThreadDispatcher::onConnect", s);
+    logger(DISPATCH, LogLevel::DEBUG).log(s);
     _sendQueue.emplace(s, std::queue<DataEvent>{});
   }
 
   void onDisconnect(sock_t s) override
   {
-    debug("SingleThreadDispatcher::onDisconnect", s);
+    logger(DISPATCH, LogLevel::DEBUG).log(s);
     _sendQueue.erase(s);
   }
 

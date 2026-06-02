@@ -6,12 +6,16 @@
 #include "EventLoop.h"
 #include "EventLoopHandler.h"
 #include "Exception.h"
-#include "NetppDebug.h"
+#include "Netpp/Logger/Logger.h"
 
 // https://medium.com/@m-ibrahim.research/mastering-epoll-the-engine-behind-high-performance-linux-networking-85a15e6bde90
 
 namespace Netpp
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *EPOLL = "epoll";
 
 class EventLoopEpoll : public EventLoop
 {
@@ -20,8 +24,8 @@ public:
   {
     sock_t fd = ::epoll_create1(0);
     int err = errno;
-    
-    debug("EventLoopEpoll", fd);
+
+    logger(EPOLL, LogLevel::TRACE).log(fd);
 
     if (fd < 0)
     {
@@ -33,7 +37,7 @@ public:
 
   virtual ~EventLoopEpoll()
   {
-    debug("~EventLoopEpoll", _fd);
+    logger(EPOLL, LogLevel::TRACE).log(_fd);
     if (_fd >= 0)
     {
       ::close(_fd);
@@ -46,15 +50,15 @@ public:
     {
       throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
-        
+
     uint32_t events = EPOLLIN | EPOLLPRI;
     if (write)
     {
       events |= EPOLLOUT;
     }
 
-    debug("EventLoopEpoll", "add", fd, events);
-    
+    logger(EPOLL, LogLevel::TRACE).log(fd, events);
+
     epoll_event event = {events, {.fd = fd}};
 
     if (_handlers.contains(fd))
@@ -70,7 +74,7 @@ public:
       {
         throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_ADD) failed");
       }
-  
+
       _handlers.emplace(fd, handler);
     }
   }
@@ -82,7 +86,7 @@ public:
       throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
 
-    debug("EventLoopEpoll", "del", fd);
+    logger(EPOLL, LogLevel::TRACE).log(fd);
 
     if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, nullptr) < 0)
     {
@@ -105,7 +109,7 @@ public:
       if (ret == -1)
       {
         int err = errno;
-        debug("EventLoopEpoll", "run", "error", ret, err);
+        logger(EPOLL, LogLevel::ERROR).log(ret, err);
         if (err == EINTR)
         {
           continue; // interrupted, try again
@@ -116,7 +120,7 @@ public:
       if (ret == 0)
       {
         // `epoll_wait` reached its timeout
-        debug("EventLoopEpoll", "run", "timeout", ret);
+        logger(EPOLL, LogLevel::TRACE).log("timeout", ret);
         continue;
       }
 
@@ -129,7 +133,7 @@ public:
 
   void handle(const epoll_event &ev)
   {
-    debug("EventLoopEpoll", "handle", ev.data.fd, ev.events);
+    logger(EPOLL, LogLevel::TRACE).log(ev.data.fd, ev.events);
     EventLoopHandler *handler = _handlers[ev.data.fd];
     if (ev.events & (EPOLLERR | EPOLLHUP))
     {

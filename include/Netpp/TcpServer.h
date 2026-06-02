@@ -15,12 +15,16 @@
 #include "Netpp/Dispatcher.h"
 #include "Netpp/EventLoop.h"
 #include "Netpp/EventLoopHandler.h"
-#include "Netpp/NetppDebug.h"
+#include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/Socket.h"
 
 namespace Netpp
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *TCPSERVER = "tcpserver";
 
 class TcpServer : public EventLoopHandler
 {
@@ -36,7 +40,7 @@ public:
 
   void listen(const char *addr, uint16_t port, Protocol *protocol)
   {
-    debug("TcpServer::listen", addr, port);
+    logger(TCPSERVER, LogLevel::DEBUG).log(addr, port);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     Socket::bind(s, addr, port);
     Socket::listen(s, 128);
@@ -46,7 +50,7 @@ public:
 
   virtual ~TcpServer()
   {
-    debug("~TcpServer");
+    logger(TCPSERVER, LogLevel::DEBUG).log(_notifyFd, _listeners.size());
     if (_notifyFd >= 0)
     {
       _loop->del(_notifyFd);
@@ -66,7 +70,7 @@ public:
       auto protocol = _protocols.at(s);
       auto conn = it->second;
       //_dispatcher->postRecv([protocol, conn] {
-        protocol->onError(conn);
+      protocol->onError(conn);
       //});
     }
     close(s);
@@ -92,13 +96,13 @@ public:
     auto lsi = _listeners.find(s);
     if (lsi != _listeners.end())
     {
-      debug("TcpServer::accept", s);
+      logger(TCPSERVER, LogLevel::DEBUG).log("accept", s);
       auto protocol = lsi->second;
       sockaddr_in addr;
       sock_t as = Socket::accept(s, addr);
       if (as <= 0)
       {
-        debug("TcpServer::accept::error", s, as, errno, ::strerror(errno));
+        logger(TCPSERVER, LogLevel::ERROR).log("accept error", s, as, errno, ::strerror(errno));
         return;
       }
       auto conn = std::make_shared<Connection>(as);
@@ -107,7 +111,7 @@ public:
       _loop->add(as, this);
       _dispatcher->onConnect(as);
       //_dispatcher->postRecv([protocol, conn] {
-        protocol->onConnect(conn);
+      protocol->onConnect(conn);
       //});
     }
     else
@@ -122,23 +126,21 @@ public:
         auto len = Socket::recv(s, data.buffer.data(), data.buffer.size(), 0);
         auto err = errno;
 
-        debug("TcpServer::recv", s, len);
+        logger(TCPSERVER, LogLevel::DEBUG).log("recv", s, len);
 
         if (len > 0)
         {
           data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
-          _dispatcher->postRecv([protocol, data = std::move(data)]() mutable {
-            protocol->onReceive(std::move(data));
-          });
+          _dispatcher->postRecv([protocol, data = std::move(data)]() mutable { protocol->onReceive(std::move(data)); });
         }
         else if (len == 0)
         {
-          debug("TcpServer::recv::disconnect", s);
+          logger(TCPSERVER, LogLevel::DEBUG).log("recv::disconnect", s);
           {
             std::scoped_lock lock(_generatorsMutex);
             if (_generators.contains(s))
             {
-              debug("TcpServer::recv::disconnect::gen::stop", s);
+              logger(TCPSERVER, LogLevel::DEBUG).log("disconnect::gen::stop", s);
               _generators.erase(s);
             }
           }
@@ -150,13 +152,13 @@ public:
         }
         else
         {
-          debug("TcpServer::recv::error", s, len, err, ::strerror(err));
+          logger(TCPSERVER, LogLevel::ERROR).log("recv::error", s, len, err, ::strerror(err));
           close(s);
         }
       }
       else
       {
-        debug("TcpServer::recv::unknown", s);
+        logger(TCPSERVER, LogLevel::DEBUG).log("recv::unknown", s);
         close(s);
       }
     }
@@ -171,24 +173,22 @@ public:
 
   virtual void handleWriting(sock_t s) override
   {
-    debug("TcpServer::handleWriting", s);
+    logger(TCPSERVER, LogLevel::DEBUG).log(s);
     DrainResult result;
     {
       auto sendLock = _dispatcher->lockSend(s);
       result = drainSent(s);
     }
+    logger(TCPSERVER, LogLevel::DEBUG).log(s, result);
     switch (result)
     {
     case DrainResult::Done:
-      debug("TcpServer::handleWriting::done", s);
       _loop->add(s, this, false); // all sent, stop watching writes
       break;
     case DrainResult::Close:
-      debug("TcpServer::handleWriting::close", s);
       close(s);
       break;
     case DrainResult::Partial:
-      debug("TcpServer::handleWriting::partial", s);
       break;
     }
     {
@@ -197,7 +197,7 @@ public:
       {
         if (result != DrainResult::Close)
         {
-          debug("TcpServer::handleWriting::gen:cont", s);
+          logger(TCPSERVER, LogLevel::DEBUG).log("gen:cont", s);
           _dispatcher->postRecv([this, s] {
             DataEvent data;
             {
@@ -214,18 +214,17 @@ public:
         }
         else
         {
-          debug("TcpServer::handleWriting::gen::stop", s);
+          logger(TCPSERVER, LogLevel::DEBUG).log("gen::stop", s);
           _generators.erase(s);
         }
       }
     }
   }
 
-
   DrainResult drainSent(sock_t s)
   {
     auto &queue = _dispatcher->getSendQueue(s);
-    debug("TcpServer::drainSent", s, queue.size());
+    logger(TCPSERVER, LogLevel::DEBUG).log(s, queue.size());
     if (queue.empty())
     {
       return DrainResult::Done;
@@ -273,7 +272,7 @@ public:
     {
       auto len = Socket::send(s, data.buffer.data() + data.sent, data.buffer.size() - data.sent, 0);
       auto err = errno;
-      debug("TcpServer::flush", s, len, data.close);
+      logger(TCPSERVER, LogLevel::DEBUG).log(s, len, data.close);
       if (len < 0)
       {
         if (err == EAGAIN || err == EWOULDBLOCK)
@@ -283,7 +282,7 @@ public:
         }
         else
         {
-          debug("TcpServer::flush::error", s, len, err, ::strerror(err));
+          logger(TCPSERVER, LogLevel::ERROR).log(s, len, err, ::strerror(err));
           data.close = true;              // mark for close
           data.sent = data.buffer.size(); // mark as "done" so close triggers
           return true;
@@ -322,7 +321,7 @@ public:
 private:
   void close(sock_t s)
   {
-    debug("TcpServer::close", s);
+    logger(TCPSERVER, LogLevel::DEBUG).log(s);
     auto it = _connections.find(s);
     bool known = it != _connections.end();
     if (known)
@@ -330,7 +329,7 @@ private:
       auto protocol = _protocols.at(s);
       auto conn = it->second;
       //_dispatcher->postRecv([protocol, conn] {
-        protocol->onDisconnect(conn);
+      protocol->onDisconnect(conn);
       //});
       _protocols.erase(s);
     }

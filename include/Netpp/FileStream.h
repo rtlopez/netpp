@@ -4,10 +4,15 @@
 #include <fstream>
 #include <string>
 
-#include "DataEvent.h"
+#include "Netpp/DataEvent.h"
+#include "Netpp/Logger/Logger.h"
 
 namespace Netpp
 {
+
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *FILESTREAM = "filestream";
 
 class FileStream
 {
@@ -34,7 +39,7 @@ public:
       std::string line;
       std::getline(_file, line);
       line += "\n";
-      debug("STREAM", line.size(), _file.eof());
+      logger(FILESTREAM, LogLevel::DEBUG).log(line.size(), _file.eof());
       return {.conn = _conn, .buffer = {line.begin(), line.end()}, .close = _file.eof()};
     }
 
@@ -42,7 +47,7 @@ public:
     _file.read(reinterpret_cast<char *>(buffer.data()), _size);
     auto bytesRead = _file.gcount();
     buffer.resize(static_cast<size_t>(bytesRead));
-    debug("STREAM", buffer.size(), _file.eof());
+    logger(FILESTREAM, LogLevel::DEBUG).log(buffer.size(), _file.eof());
     return {.conn = _conn, .buffer = std::move(buffer), .close = _file.eof()};
   }
 
