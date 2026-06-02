@@ -10,9 +10,18 @@ include_directories(include/)
 
 find_package(Threads REQUIRED)
 
+add_subdirectory(src/Netpp)
+
 # server example
 add_executable(server src/server.cpp)
-target_link_libraries(server Threads::Threads)
+target_link_libraries(server PRIVATE
+    Threads::Threads
+    netpp_core
+    netpp_logger
+    netpp_http
+    netpp_echo
+    netpp_chat
+)
 
 # client example
 add_executable(client src/client.cpp)
