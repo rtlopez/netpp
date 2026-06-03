@@ -66,9 +66,8 @@ public:
 
   // --- Dispatcher interface ---
 
-  void send(DataEvent data) override
+  void send(sock_t s, DataEvent data) override
   {
-    auto s = data.conn->getId();
     {
       std::scoped_lock lock(_sendMutex);
       auto it = _sendQueues.find(s);
@@ -129,7 +128,44 @@ public:
     _taskCv.notify_one();
   }
 
+  void postForConnection(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
+  {
+    bool shouldSchedule = false;
+    {
+      std::scoped_lock lock(conn->strandMutex());
+      conn->taskQueue().push(std::move(task));
+      if (!conn->isProcessing())
+      {
+        conn->setProcessing(true);
+        shouldSchedule = true;
+      }
+    }
+    if (shouldSchedule)
+    {
+      postRecv([this, conn] { drainConnectionTasks(conn); });
+    }
+  }
+
 private:
+  void drainConnectionTasks(ConnectionPtr conn)
+  {
+    while (true)
+    {
+      MoveOnlyFunction<void()> task;
+      {
+        std::scoped_lock lock(conn->strandMutex());
+        if (conn->taskQueue().empty())
+        {
+          conn->setProcessing(false);
+          return;
+        }
+        task = std::move(conn->taskQueue().front());
+        conn->taskQueue().pop();
+      }
+      task();
+    }
+  }
+
   void workerLoop()
   {
     while (true)

@@ -30,8 +30,8 @@ public:
     _clients.insert(conn);
 
     std::string welcome = "Welcome to the chat room\n";
-    DataEvent resp{conn, DataEvent::Buffer(welcome.begin(), welcome.end())};
-    _server->send(std::move(resp));
+    DataEvent resp{DataEvent::Buffer(welcome.begin(), welcome.end())};
+    _server->send(conn, std::move(resp));
 
     logger(CHAT, LogLevel::DEBUG).log(conn->getPeerName());
   }
@@ -43,16 +43,16 @@ public:
     logger(CHAT, LogLevel::DEBUG).log(conn->getPeerName());
   }
 
-  void onReceive(DataEvent data) override
+  void onReceive(ConnectionPtr conn, DataEvent data) override
   {
     auto str = std::string(data.buffer.begin(), data.buffer.end());
 
     for (const ConnectionPtr &c : _clients)
     {
-      if (c != data.conn)
+      if (c != conn)
       {
-        DataEvent resp{c, DataEvent::Buffer(str.begin(), str.end())};
-        _server->send(std::move(resp));
+        DataEvent resp{DataEvent::Buffer(str.begin(), str.end())};
+        _server->send(c, std::move(resp));
       }
     }
 

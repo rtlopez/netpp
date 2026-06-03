@@ -52,9 +52,9 @@ public:
     _requests.erase(s);
   }
 
-  void onReceive(DataEvent data) override
+  void onReceive(ConnectionPtr conn, DataEvent data) override
   {
-    int s = data.conn->getId();
+    int s = conn->getId();
 
     logger(HTTP, LogLevel::DEBUG).log(s, data.buffer.size());
 
@@ -68,7 +68,7 @@ public:
         HttpResponse res = initResponse(*req);
         if (_middleware)
         {
-          _middleware(*req, res, data.conn);
+          _middleware(*req, res, conn);
         }
         if (res.status == 404)
         {
@@ -76,7 +76,7 @@ public:
               "<html>\n<head><title>Not Found</title></head>\n<body><h1>Not Found</h1></body>\n</html>\n";
           res.setBody(content, sizeof(content) - 1);
         }
-        sendResponse(data.conn, std::move(res));
+        sendResponse(conn, std::move(res));
       }
     }
     catch (const HttpException &e)
@@ -86,7 +86,7 @@ public:
       static const char content[] =
           "<html>\n<head><title>Invalid request</title></head>\n<body><h1>Invalid Request</h1></body>\n</html>\n";
       res.setBody(content, sizeof(content) - 1);
-      sendResponse(data.conn, std::move(res));
+      sendResponse(conn, std::move(res));
     }
   }
 
@@ -109,20 +109,20 @@ private:
     }
     const auto headers_str = res.str();
 
-    DataEvent hdr{conn, DataEvent::Buffer(headers_str.begin(), headers_str.end())};
+    DataEvent hdr{DataEvent::Buffer(headers_str.begin(), headers_str.end())};
     logger(HTTP, LogLevel::DEBUG).log("headers", hdr.buffer.size());
-    _server->send(std::move(hdr));
+    _server->send(conn, std::move(hdr));
 
     if (res.generator)
     {
       logger(HTTP, LogLevel::DEBUG).log("generator");
-      _server->send(std::move(res.generator));
+      _server->send(conn, std::move(res.generator));
     }
     else
     {
-      DataEvent body{conn, DataEvent::Buffer(res.body.begin(), res.body.end()), true};
+      DataEvent body{DataEvent::Buffer(res.body.begin(), res.body.end()), true};
       logger(HTTP, LogLevel::DEBUG).log("body", body.buffer.size());
-      _server->send(std::move(body));
+      _server->send(conn, std::move(body));
     }
   }
 

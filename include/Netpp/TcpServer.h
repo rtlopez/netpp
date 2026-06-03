@@ -69,9 +69,7 @@ public:
     {
       auto protocol = _protocols.at(s);
       auto conn = it->second;
-      //_dispatcher->postRecv([protocol, conn] {
-      protocol->onError(conn);
-      //});
+      _dispatcher->postForConnection(conn, [protocol, conn] { protocol->onError(conn); });
     }
     close(s);
   }
@@ -110,9 +108,7 @@ public:
       _connections.emplace(as, conn);
       _loop->add(as, this);
       _dispatcher->onConnect(as);
-      //_dispatcher->postRecv([protocol, conn] {
-      protocol->onConnect(conn);
-      //});
+      _dispatcher->postForConnection(conn, [protocol, conn] { protocol->onConnect(conn); });
     }
     else
     {
@@ -122,7 +118,7 @@ public:
         auto &conn = it->second;
         auto protocol = _protocols.at(s);
 
-        DataEvent data{conn, DataEvent::Buffer(4096)};
+        DataEvent data{DataEvent::Buffer(4096)};
         auto len = Socket::recv(s, data.buffer.data(), data.buffer.size(), 0);
         auto err = errno;
 
@@ -131,7 +127,8 @@ public:
         if (len > 0)
         {
           data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
-          _dispatcher->postRecv([protocol, data = std::move(data)]() mutable { protocol->onReceive(std::move(data)); });
+          _dispatcher->postForConnection(
+              conn, [protocol, conn, data = std::move(data)]() mutable { protocol->onReceive(conn, std::move(data)); });
         }
         else if (len == 0)
         {
@@ -198,18 +195,19 @@ public:
         if (result != DrainResult::Close)
         {
           logger(TCPSERVER, LogLevel::DEBUG).log("gen:cont", s);
-          _dispatcher->postRecv([this, s] {
+          auto conn = _connections.at(s);
+          _dispatcher->postRecv([this, conn] {
             DataEvent data;
             {
               std::scoped_lock lock(_generatorsMutex);
-              auto it = _generators.find(s);
+              auto it = _generators.find(conn->getId());
               if (it == _generators.end())
               {
                 return;
               }
               data = it->second();
             }
-            send(std::move(data));
+            send(conn, std::move(data));
           });
         }
         else
@@ -296,10 +294,10 @@ public:
     return true;
   }
 
-  void send(DataEvent data)
+  void send(ConnectionPtr conn, DataEvent data)
   {
-    auto s = data.conn->getId(); // note std::move later
-    _dispatcher->send(std::move(data));
+    auto s = conn->getId();
+    _dispatcher->send(s, std::move(data));
     if (_notifyFd < 0)
     {
       _loop->add(s, this, true); // single-thread: enable write watching directly
@@ -307,15 +305,15 @@ public:
     // in threaded mode, ThreadPoolDispatcher::send() notifies via eventfd
   }
 
-  void send(MoveOnlyFunction<DataEvent(void)> generator)
+  void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
   {
     auto data = generator();
-    auto s = data.conn->getId(); // note std::move later
+    auto s = conn->getId();
     {
       std::scoped_lock lock(_generatorsMutex);
       _generators.emplace(s, std::move(generator));
     }
-    send(std::move(data));
+    send(conn, std::move(data));
   }
 
 private:
@@ -328,9 +326,7 @@ private:
     {
       auto protocol = _protocols.at(s);
       auto conn = it->second;
-      //_dispatcher->postRecv([protocol, conn] {
-      protocol->onDisconnect(conn);
-      //});
+      _dispatcher->postForConnection(conn, [protocol, conn] { protocol->onDisconnect(conn); });
       _protocols.erase(s);
     }
     _dispatcher->onDisconnect(s);

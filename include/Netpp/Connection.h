@@ -1,9 +1,12 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
+#include <queue>
 #include <string>
 
 #include "Netpp/Logger/Logger.h"
+#include "Netpp/MoveOnlyFunction.h"
 #include "Socket.h"
 
 namespace Netpp
@@ -48,11 +51,22 @@ public:
 
   bool operator!=(const Connection &other) const
   {
-    return !this->operator==(other);
+    return !(*this == other);
   }
+
+  // Strand: per-connection task serialization
+  std::mutex &strandMutex() { return _strandMutex; }
+  std::queue<MoveOnlyFunction<void()>> &taskQueue() { return _taskQueue; }
+  bool isProcessing() const { return _processing; }
+  void setProcessing(bool v) { _processing = v; }
 
 private:
   sock_t _s;
+
+  // Strand state (used by ThreadPoolDispatcher)
+  std::queue<MoveOnlyFunction<void()>> _taskQueue;
+  std::mutex _strandMutex;
+  bool _processing = false;
 };
 
 using ConnectionPtr = std::shared_ptr<Connection>;

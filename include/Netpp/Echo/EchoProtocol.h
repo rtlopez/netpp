@@ -34,12 +34,12 @@ public:
     logger(ECHO, LogLevel::DEBUG).log(conn->getPeerName());
   }
 
-  void onReceive(DataEvent data) override
+  void onReceive(ConnectionPtr conn, DataEvent data) override
   {
     auto str = std::string(data.buffer.begin(), data.buffer.end());
 
-    DataEvent resp{data.conn, DataEvent::Buffer(str.begin(), str.end())};
-    _server->send(std::move(resp));
+    DataEvent resp{DataEvent::Buffer(str.begin(), str.end())};
+    _server->send(conn, std::move(resp));
 
     for (size_t i = 0; i < 2 && !str.empty(); i++)
     {

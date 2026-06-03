@@ -17,13 +17,13 @@ static const char *FILESTREAM = "filestream";
 class FileStream
 {
 public:
-  FileStream(ConnectionPtr conn, const std::filesystem::path &filename, size_t size = 2048)
-      : _conn(conn), _filename(filename), _file(filename, std::ios::binary | std::ios::in), _size(size)
+  FileStream(const std::filesystem::path &filename, size_t size = 2048)
+      : _filename(filename), _file(filename, std::ios::binary | std::ios::in), _size(size)
   {
   }
 
-  FileStream(ConnectionPtr conn, const std::filesystem::path &filename, std::ifstream &&file, size_t size = 2048)
-      : _conn(conn), _filename(filename), _file(std::move(file)), _size(size)
+  FileStream(const std::filesystem::path &filename, std::ifstream &&file, size_t size = 2048)
+      : _filename(filename), _file(std::move(file)), _size(size)
   {
   }
 
@@ -40,7 +40,7 @@ public:
       std::getline(_file, line);
       line += "\n";
       logger(FILESTREAM, LogLevel::DEBUG).log(line.size(), _file.eof());
-      return {.conn = _conn, .buffer = {line.begin(), line.end()}, .close = _file.eof()};
+      return {.buffer = {line.begin(), line.end()}, .close = _file.eof()};
     }
 
     std::vector<uint8_t> buffer(_size);
@@ -48,11 +48,10 @@ public:
     auto bytesRead = _file.gcount();
     buffer.resize(static_cast<size_t>(bytesRead));
     logger(FILESTREAM, LogLevel::DEBUG).log(buffer.size(), _file.eof());
-    return {.conn = _conn, .buffer = std::move(buffer), .close = _file.eof()};
+    return {.buffer = std::move(buffer), .close = _file.eof()};
   }
 
 private:
-  ConnectionPtr _conn;
   std::filesystem::path _filename;
   std::ifstream _file;
   size_t _size;

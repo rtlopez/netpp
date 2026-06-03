@@ -16,9 +16,8 @@ static const char *DISPATCH = "dispatch";
 class SingleThreadDispatcher : public Dispatcher
 {
 public:
-  void send(DataEvent data) override
+  void send(sock_t s, DataEvent data) override
   {
-    auto s = data.conn->getId();
     getSendQueue(s).push(std::move(data));
   }
 

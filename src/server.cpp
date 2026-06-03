@@ -140,16 +140,16 @@ int main(int argc, const char **argv)
   });
 
   router.on("GET", "/stream",
-            [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
+            [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
               logger(SERVER, LogLevel::INFO).log("[HTTP]", "/stream");
-              res.setGenerator([conn, counter = 0]() mutable -> Netpp::DataEvent {
+              res.setGenerator([counter = 0]() mutable -> Netpp::DataEvent {
                 counter++;
                 std::string data = "line " + std::to_string(counter) + "\n";
-                return {.conn = conn, .buffer = {data.begin(), data.end()}, .close = counter >= 5};
+                return {.buffer = {data.begin(), data.end()}, .close = counter >= 5};
               });
             });
 
-  router.on("GET", "/file", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
+  router.on("GET", "/file", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
     std::filesystem::path filename = "src/server.cpp";
     // std::cout << "[HTTP] " << filename << std::endl;
     if (!std::filesystem::is_regular_file(filename))
@@ -170,7 +170,7 @@ int main(int argc, const char **argv)
     res.headers["content-length"] = std::to_string(size);
     res.headers["content-type"] = "text/plain";
 
-    res.setGenerator(Netpp::FileStream{conn, filename.string(), std::move(file)});
+    res.setGenerator(Netpp::FileStream{filename.string(), std::move(file)});
   });
 
   loop.run();
