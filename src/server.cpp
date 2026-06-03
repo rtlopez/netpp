@@ -2,7 +2,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <sstream>
+#include <string>
+
+#include <lyra/lyra.hpp>
 
 #include "Netpp/Chat/ChatProtocol.h"
 #include "Netpp/DataEvent.h"
@@ -13,27 +18,80 @@
 #include "Netpp/Http/HttpRouter.h"
 #include "Netpp/SignalHandler.h"
 // #include "Netpp/SingleThreadDispatcher.h"
-#include "Netpp/ThreadPoolDispatcher.h"
-#include "Netpp/TcpServer.h"
 #include "Netpp/Logger/Logger.h"
+#include "Netpp/TcpServer.h"
+#include "Netpp/ThreadPoolDispatcher.h"
 
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
-static const char* SERVER = "server";
-
-static const char *HOST = "127.0.0.1";
-static constexpr uint16_t HTTP_PORT = 1234;
-static constexpr uint16_t CHAT_PORT = 1235;
-static constexpr uint16_t ECHO_PORT = 1236;
+static const char *SERVER = "server";
 
 void sigpipe_handler(int signum)
 {
   logger(SERVER, LogLevel::INFO).log("SIGPIPE caught", signum);
 }
 
-int main()
+int main(int argc, const char **argv)
 {
-  logger(SERVER, LogLevel::INFO).log("Starting server");
+  bool showHelp = false;
+  std::string host = "127.0.0.1";
+  std::string logLevelName = "info";
+  int httpPort = 1234;
+  int chatPort = 1235;
+  int echoPort = 1236;
+  int workerThreads = 16;
+
+  // clang-format off
+  // https://www.bfgroup.xyz/Lyra/lyra.html
+  auto cli = lyra::help(showHelp)
+      | lyra::opt(host, "host")["--host"]("Host address to bind")
+      | lyra::opt(httpPort, "port")["--http-port"]("HTTP port")
+      | lyra::opt(chatPort, "port")["--chat-port"]("Chat port")
+      | lyra::opt(echoPort, "port")["--echo-port"]("Echo port")
+      | lyra::opt(workerThreads, "count")["--threads"]("Thread pool worker count")
+      | lyra::opt(logLevelName, "level")["--log-level"]("Log level: trace, debug, info, warn, error")
+        .choices("trace", "debug", "info", "warn", "error");
+  // clang-format on
+
+  auto result = cli.parse({argc, argv});
+  if (!result)
+  {
+    std::cerr << "CLI error: " << result.message() << '\n';
+    std::cerr << cli << '\n';
+    return 2;
+  }
+
+  if (showHelp)
+  {
+    std::cout << cli << '\n';
+    return 0;
+  }
+
+  auto isValidPort = [](int port) { return port > 0 && port <= 65535; };
+
+  if (!isValidPort(httpPort) || !isValidPort(chatPort) || !isValidPort(echoPort))
+  {
+    std::cerr << "Invalid port. Allowed range: 1-65535\n";
+    return 2;
+  }
+
+  if (workerThreads <= 0)
+  {
+    std::cerr << "Invalid --threads value. It must be greater than 0\n";
+    return 2;
+  }
+
+  auto levelOpt = Netpp::Logger::logLevelFromName(logLevelName);
+  if (!levelOpt.has_value())
+  {
+    std::cerr << "Invalid --log-level value: " << logLevelName << '\n';
+    return 2;
+  }
+  auto logLevel = levelOpt.value();
+
+  Netpp::Logger::Logger::getInstance()->setLevel(logLevel);
+
+  logger(SERVER, LogLevel::INFO).log("Starting server", "log-level:", Netpp::Logger::logLevelToName(logLevel));
 
   std::signal(SIGPIPE, sigpipe_handler);
 
@@ -42,7 +100,7 @@ int main()
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
 
   // Netpp::SingleThreadDispatcher dispatcher;
-  Netpp::ThreadPoolDispatcher dispatcher(16); // 8 worker threads
+  Netpp::ThreadPoolDispatcher dispatcher(workerThreads);
   Netpp::TcpServer tcpServer{&loop, &dispatcher};
 
   Netpp::Chat::ChatProtocol chat{&tcpServer};
@@ -50,9 +108,9 @@ int main()
   Netpp::Http::HttpProtocol http{&tcpServer};
   Netpp::Http::HttpRouter router;
 
-  tcpServer.listen(HOST, HTTP_PORT, &http);
-  tcpServer.listen(HOST, CHAT_PORT, &chat);
-  tcpServer.listen(HOST, ECHO_PORT, &echo);
+  tcpServer.listen(host.c_str(), static_cast<uint16_t>(httpPort), &http);
+  tcpServer.listen(host.c_str(), static_cast<uint16_t>(chatPort), &chat);
+  tcpServer.listen(host.c_str(), static_cast<uint16_t>(echoPort), &echo);
 
   http.addMiddleware(
       [&router](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
@@ -108,7 +166,7 @@ int main()
     }
     auto size = std::filesystem::file_size(filename);
     // std::cout << "[HTTP] file size: " << size << std::endl;
-    
+
     res.headers["content-length"] = std::to_string(size);
     res.headers["content-type"] = "text/plain";
 

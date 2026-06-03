@@ -3,10 +3,13 @@
 #include <chrono>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <source_location>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <unistd.h>
+
 namespace Netpp::Logger
 {
 
@@ -15,12 +18,13 @@ enum LogLevel : size_t
   TRACE = 0,
   DEBUG = 1,
   INFO = 2,
-  WARNING = 3,
+  WARN = 3,
   ERROR = 4,
-  LEVEL_MAX = 5
+  FATAL = 5,
 };
 
-static std::array<std::string_view, LEVEL_MAX> logLevelNames = {"TRACE", "DEBUG", "INFO", "WARNING", "ERROR"};
+const std::string_view logLevelToName(LogLevel level);
+std::optional<LogLevel> logLevelFromName(std::string_view name);
 
 inline std::string_view extractFileName(std::string_view path)
 {
@@ -121,13 +125,17 @@ public:
 
   static Logger *getInstance();
 
+  void setLevel(LogLevel level)
+  {
+    _level = level;
+  }
+
   void write(const LogEntry &entry)
   {
-    if (entry.getLevel() < LogLevel::DEBUG)
+    if (entry.getLevel() < _level)
     {
-      //return;
+      return;
     }
-
     std::scoped_lock lock(_mutex);
     write(entry.getTimestamp());
     write(entry.getThreadId());
@@ -150,12 +158,12 @@ private:
 
   void write(LogLevel level)
   {
-    std::cout << " " << logLevelNames[level];
+    std::cout << " " << logLevelToName(level);
   }
 
   void write(std::source_location location)
   {
-    std::cout << " " << extractFileName(location.file_name()) << ":" << location.line() << " "
+    std::cout << " " << extractFileName(location.file_name()) << ":" << location.line() << ":"
               << extractFunctionName(location.function_name());
   }
 
@@ -166,6 +174,7 @@ private:
   }
 
   std::mutex _mutex;
+  LogLevel _level = LogLevel::INFO;
 };
 
 inline LogEntry logger(std::string_view channel, LogLevel level,

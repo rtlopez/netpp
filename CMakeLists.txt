@@ -8,6 +8,14 @@ add_compile_options(-Wall -Wextra)
 
 include_directories(include/)
 
+include(FetchContent)
+FetchContent_Declare(
+    lyra
+    GIT_REPOSITORY https://github.com/bfgroup/Lyra.git
+    GIT_TAG 1.8.0
+)
+FetchContent_MakeAvailable(lyra)
+
 find_package(Threads REQUIRED)
 
 add_subdirectory(src/Netpp)
@@ -15,6 +23,7 @@ add_subdirectory(src/Netpp)
 # server example
 add_executable(server src/server.cpp)
 target_link_libraries(server PRIVATE
+    lyra
     Threads::Threads
     netpp_core
     netpp_logger
