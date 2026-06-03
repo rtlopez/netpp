@@ -80,7 +80,7 @@ public:
       auto sockets = _dispatcher->drainPendingWrites();
       for (auto ws : sockets)
       {
-        if (_connections.contains(ws))
+        if (_connections.contains(ws)) // signity check??
         {
           _loop->add(ws, this, true);
         }

@@ -55,18 +55,20 @@ public:
     _requests.erase(s);
   }
 
+  HttpRequestPtr getRequest(ConnectionPtr conn)
+  {
+    int s = conn->getId();
+    std::scoped_lock lock(_requestsMutex);
+    return _requests.at(s);
+  }
+
   void onReceive(ConnectionPtr conn, DataEvent data) override
   {
     int s = conn->getId();
 
     logger(HTTP, LogLevel::DEBUG).log(s, data.buffer.size());
 
-    HttpRequestPtr req;
-    {
-      std::scoped_lock lock(_requestsMutex);
-      req = _requests.at(s);
-    }
-
+    HttpRequestPtr req = getRequest(conn);
     try
     {
       req->receive(reinterpret_cast<const char *>(data.buffer.data()), data.buffer.size());
