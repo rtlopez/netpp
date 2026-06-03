@@ -31,67 +31,79 @@ void sigpipe_handler(int signum)
   logger(SERVER, LogLevel::INFO).log("SIGPIPE caught", signum);
 }
 
-int main(int argc, const char **argv)
+struct CliArgs
 {
+  CliArgs(int argc, const char **argv)
+  {
+    // https://www.bfgroup.xyz/Lyra/lyra.html
+    // clang-format off
+    auto cli = lyra::help(showHelp)
+        | lyra::opt(host, "host")["--host"]("Host address to bind")
+        | lyra::opt(httpPort, "port")["--http-port"]("HTTP port")
+        | lyra::opt(chatPort, "port")["--chat-port"]("Chat port")
+        | lyra::opt(echoPort, "port")["--echo-port"]("Echo port")
+        | lyra::opt(workerThreads, "count")["--threads"]("Thread pool worker count")
+        | lyra::opt(logLevelName, "level")["--log-level"]("Log level: trace, debug, info, warn, error")
+          .choices("trace", "debug", "info", "warn", "error");
+    // clang-format on
+
+    parseResult = cli.parse({argc, argv});
+    if (!parseResult)
+    {
+      std::cerr << "CLI error: " << parseResult.message() << '\n';
+      std::cerr << cli << '\n';
+      exit(1);
+    }
+
+    if (showHelp)
+    {
+      std::cout << cli << '\n';
+      exit(0);
+    }
+
+    auto isValidPort = [](int port) { return port > 0 && port <= 65535; };
+
+    if (!isValidPort(httpPort) || !isValidPort(chatPort) || !isValidPort(echoPort))
+    {
+      std::cerr << "Invalid port. Allowed range: 1-65535\n";
+      exit(1);
+    }
+
+    if (workerThreads <= 0)
+    {
+      std::cerr << "Invalid --threads value. It must be greater than 0\n";
+      exit(1);
+    }
+
+    auto levelOpt = Netpp::Logger::logLevelFromName(logLevelName);
+    if (!levelOpt.has_value())
+    {
+      std::cerr << "Invalid --log-level value: " << logLevelName << '\n';
+      exit(1);
+    }
+    logLevel = levelOpt.value();
+  }
+
   bool showHelp = false;
   std::string host = "127.0.0.1";
-  std::string logLevelName = "info";
   int httpPort = 1234;
   int chatPort = 1235;
   int echoPort = 1236;
   int workerThreads = 16;
+  std::string logLevelName = "info";
+  LogLevel logLevel = LogLevel::INFO;
 
-  // clang-format off
-  // https://www.bfgroup.xyz/Lyra/lyra.html
-  auto cli = lyra::help(showHelp)
-      | lyra::opt(host, "host")["--host"]("Host address to bind")
-      | lyra::opt(httpPort, "port")["--http-port"]("HTTP port")
-      | lyra::opt(chatPort, "port")["--chat-port"]("Chat port")
-      | lyra::opt(echoPort, "port")["--echo-port"]("Echo port")
-      | lyra::opt(workerThreads, "count")["--threads"]("Thread pool worker count")
-      | lyra::opt(logLevelName, "level")["--log-level"]("Log level: trace, debug, info, warn, error")
-        .choices("trace", "debug", "info", "warn", "error");
-  // clang-format on
+private:
+  lyra::parse_result parseResult{lyra::result::error("Not parsed yet")};
+};
 
-  auto result = cli.parse({argc, argv});
-  if (!result)
-  {
-    std::cerr << "CLI error: " << result.message() << '\n';
-    std::cerr << cli << '\n';
-    return 2;
-  }
+int main(int argc, const char **argv)
+{
+  CliArgs args{argc, argv};
 
-  if (showHelp)
-  {
-    std::cout << cli << '\n';
-    return 0;
-  }
+  Netpp::Logger::Logger::getInstance()->setLevel(args.logLevel);
 
-  auto isValidPort = [](int port) { return port > 0 && port <= 65535; };
-
-  if (!isValidPort(httpPort) || !isValidPort(chatPort) || !isValidPort(echoPort))
-  {
-    std::cerr << "Invalid port. Allowed range: 1-65535\n";
-    return 2;
-  }
-
-  if (workerThreads <= 0)
-  {
-    std::cerr << "Invalid --threads value. It must be greater than 0\n";
-    return 2;
-  }
-
-  auto levelOpt = Netpp::Logger::logLevelFromName(logLevelName);
-  if (!levelOpt.has_value())
-  {
-    std::cerr << "Invalid --log-level value: " << logLevelName << '\n';
-    return 2;
-  }
-  auto logLevel = levelOpt.value();
-
-  Netpp::Logger::Logger::getInstance()->setLevel(logLevel);
-
-  logger(SERVER, LogLevel::INFO).log("Starting server", "log-level:", Netpp::Logger::logLevelToName(logLevel));
+  logger(SERVER, LogLevel::INFO).log("Starting server", "log-level:", Netpp::Logger::logLevelToName(args.logLevel));
 
   std::signal(SIGPIPE, sigpipe_handler);
 
@@ -100,7 +112,7 @@ int main(int argc, const char **argv)
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
 
   // Netpp::SingleThreadDispatcher dispatcher;
-  Netpp::ThreadPoolDispatcher dispatcher(workerThreads);
+  Netpp::ThreadPoolDispatcher dispatcher(args.workerThreads);
   Netpp::TcpServer tcpServer{&loop, &dispatcher};
 
   Netpp::Chat::ChatProtocol chat{&tcpServer};
@@ -108,9 +120,9 @@ int main(int argc, const char **argv)
   Netpp::Http::HttpProtocol http{&tcpServer};
   Netpp::Http::HttpRouter router;
 
-  tcpServer.listen(host.c_str(), static_cast<uint16_t>(httpPort), &http);
-  tcpServer.listen(host.c_str(), static_cast<uint16_t>(chatPort), &chat);
-  tcpServer.listen(host.c_str(), static_cast<uint16_t>(echoPort), &echo);
+  tcpServer.listen(args.host.c_str(), static_cast<uint16_t>(args.httpPort), &http);
+  tcpServer.listen(args.host.c_str(), static_cast<uint16_t>(args.chatPort), &chat);
+  tcpServer.listen(args.host.c_str(), static_cast<uint16_t>(args.echoPort), &echo);
 
   http.addMiddleware(
       [&router](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
@@ -139,15 +151,14 @@ int main(int argc, const char **argv)
     res.setBody(ss.str());
   });
 
-  router.on("GET", "/stream",
-            [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
-              logger(SERVER, LogLevel::INFO).log("[HTTP]", "/stream");
-              res.setGenerator([counter = 0]() mutable -> Netpp::DataEvent {
-                counter++;
-                std::string data = "line " + std::to_string(counter) + "\n";
-                return {.buffer = {data.begin(), data.end()}, .close = counter >= 5};
-              });
-            });
+  router.on("GET", "/stream", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
+    logger(SERVER, LogLevel::INFO).log("[HTTP]", "/stream");
+    res.setGenerator([counter = 0]() mutable -> Netpp::DataEvent {
+      counter++;
+      std::string data = "line " + std::to_string(counter) + "\n";
+      return {.buffer = {data.begin(), data.end()}, .close = counter >= 5};
+    });
+  });
 
   router.on("GET", "/file", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
     std::filesystem::path filename = "src/server.cpp";
