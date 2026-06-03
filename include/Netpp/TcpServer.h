@@ -67,9 +67,8 @@ public:
     auto it = _connections.find(s);
     if (it != _connections.end())
     {
-      auto protocol = _protocols.at(s);
       auto conn = it->second;
-      _dispatcher->postForConnection(conn, [protocol, conn] { protocol->onError(conn); });
+      _dispatcher->postForConnection(conn, [conn] { conn->getProtocol()->onError(conn); });
     }
     close(s);
   }
@@ -103,12 +102,13 @@ public:
         logger(TCPSERVER, LogLevel::ERROR).log("accept error", s, as, errno, ::strerror(errno));
         return;
       }
-      auto conn = std::make_shared<Connection>(as);
-      _protocols.emplace(as, protocol);
+      auto conn = std::make_shared<Connection>(as, protocol);
       _connections.emplace(as, conn);
       _loop->add(as, this);
       _dispatcher->onConnect(as);
-      _dispatcher->postForConnection(conn, [protocol, conn] { protocol->onConnect(conn); });
+      _dispatcher->postForConnection(conn, [conn] {
+        conn->getProtocol()->onConnect(conn);
+      });
     }
     else
     {
@@ -116,7 +116,6 @@ public:
       if (it != _connections.end())
       {
         auto &conn = it->second;
-        auto protocol = _protocols.at(s);
 
         DataEvent data{DataEvent::Buffer(4096)};
         auto len = Socket::recv(s, data.buffer.data(), data.buffer.size(), 0);
@@ -127,8 +126,9 @@ public:
         if (len > 0)
         {
           data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
-          _dispatcher->postForConnection(
-              conn, [protocol, conn, data = std::move(data)]() mutable { protocol->onReceive(conn, std::move(data)); });
+          _dispatcher->postForConnection(conn, [conn, data = std::move(data)]() mutable {
+            conn->getProtocol()->onReceive(conn, std::move(data));
+          });
         }
         else if (len == 0)
         {
@@ -242,7 +242,7 @@ public:
       // drain if needed
       if (!drained)
       {
-        if (!drainSent(s, data))
+        if (!drainSentData(s, data))
         {
           return DrainResult::Partial; // EAGAIN, wait for next handleWriting
         }
@@ -259,7 +259,7 @@ public:
     return DrainResult::Done;
   }
 
-  bool drainSent(sock_t s, DataEvent &data)
+  bool drainSentData(sock_t s, DataEvent &data)
   {
     if (data.buffer.empty())
     {
@@ -324,10 +324,10 @@ private:
     bool known = it != _connections.end();
     if (known)
     {
-      auto protocol = _protocols.at(s);
       auto conn = it->second;
-      _dispatcher->postForConnection(conn, [protocol, conn] { protocol->onDisconnect(conn); });
-      _protocols.erase(s);
+      _dispatcher->postForConnection(conn, [conn] {
+        conn->getProtocol()->onDisconnect(conn);
+      });
     }
     _dispatcher->onDisconnect(s);
     _loop->del(s);
@@ -346,7 +346,6 @@ private:
   Dispatcher *_dispatcher;
   sock_t _notifyFd;
   std::unordered_map<sock_t, Protocol *> _listeners;
-  std::unordered_map<sock_t, Protocol *> _protocols;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
   std::unordered_map<sock_t, MoveOnlyFunction<DataEvent(void)>> _generators;
   std::mutex _generatorsMutex;

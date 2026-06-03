@@ -12,6 +12,8 @@
 namespace Netpp
 {
 
+class Protocol;
+
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
 static const char *CONNECTION = "connection";
@@ -19,7 +21,7 @@ static const char *CONNECTION = "connection";
 class Connection
 {
 public:
-  Connection(sock_t s) : _s(s)
+  Connection(sock_t s, Protocol *protocol = nullptr) : _s(s), _protocol(protocol)
   {
     logger(CONNECTION, LogLevel::DEBUG).log(_s);
   }
@@ -44,6 +46,8 @@ public:
     return static_cast<int>(_s);
   }
 
+  Protocol *getProtocol() const { return _protocol; }
+
   bool operator==(const Connection &other) const
   {
     return _s == other._s;
@@ -62,6 +66,7 @@ public:
 
 private:
   sock_t _s;
+  Protocol *_protocol;
 
   // Strand state (used by ThreadPoolDispatcher)
   std::queue<MoveOnlyFunction<void()>> _taskQueue;
