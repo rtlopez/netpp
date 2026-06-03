@@ -66,40 +66,40 @@ public:
 
   // --- Dispatcher interface ---
 
-  void send(sock_t s, DataEvent data) override
+  void send(ConnectionPtr conn, DataEvent data) override
   {
     {
       std::scoped_lock lock(_sendMutex);
-      auto it = _sendQueues.find(s);
+      auto it = _sendQueues.find(conn->getId());
       if (it == _sendQueues.end())
       {
         return; // connection already closed
       }
       it->second.push(std::move(data));
     }
-    notifyWrite(s);
+    notifyWrite(conn);
   }
 
-  void onConnect(sock_t s) override
+  void onConnect(ConnectionPtr conn) override
   {
-    logger(DISPATCH, LogLevel::DEBUG).log(s);
+    logger(DISPATCH, LogLevel::DEBUG).log(conn->getId());
     std::scoped_lock lock(_sendMutex);
-    _sendQueues.emplace(s, std::queue<DataEvent>{});
+    _sendQueues.emplace(conn->getId(), std::queue<DataEvent>{});
   }
 
-  void onDisconnect(sock_t s) override
+  void onDisconnect(ConnectionPtr conn) override
   {
-    logger(DISPATCH, LogLevel::DEBUG).log(s);
+    logger(DISPATCH, LogLevel::DEBUG).log(conn->getId());
     std::scoped_lock lock(_sendMutex);
-    _sendQueues.erase(s);
+    _sendQueues.erase(conn->getId());
   }
 
-  std::queue<DataEvent> &getSendQueue(sock_t s) override
+  std::queue<DataEvent> &getSendQueue(ConnectionPtr conn) override
   {
-    return _sendQueues.at(s);
+    return _sendQueues.at(conn->getId());
   }
 
-  std::unique_lock<std::mutex> lockSend(sock_t) override
+  std::unique_lock<std::mutex> lockSend() override
   {
     return std::unique_lock<std::mutex>(_sendMutex);
   }
@@ -185,11 +185,11 @@ private:
     }
   }
 
-  void notifyWrite(sock_t s)
+  void notifyWrite(ConnectionPtr conn)
   {
     {
       std::scoped_lock lock(_pendingWritesMutex);
-      _pendingWrites.insert(s);
+      _pendingWrites.insert(conn->getId());
     }
     uint64_t val = 1;
     ::write(_eventFd, &val, sizeof(val));

@@ -5,6 +5,7 @@
 #include <queue>
 #include <string>
 
+#include "Netpp/DataEvent.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/MoveOnlyFunction.h"
 #include "Socket.h"
@@ -48,6 +49,31 @@ public:
 
   Protocol *getProtocol() const { return _protocol; }
 
+  // Generator: produces DataEvents for streaming sends
+  void setGenerator(MoveOnlyFunction<DataEvent(void)> gen)
+  {
+    std::scoped_lock lock(_generatorMutex);
+    _generator = std::move(gen);
+  }
+
+  bool hasGenerator()
+  {
+    std::scoped_lock lock(_generatorMutex);
+    return static_cast<bool>(_generator);
+  }
+
+  DataEvent callGenerator()
+  {
+    std::scoped_lock lock(_generatorMutex);
+    return _generator();
+  }
+
+  void clearGenerator()
+  {
+    std::scoped_lock lock(_generatorMutex);
+    _generator = {};
+  }
+
   bool operator==(const Connection &other) const
   {
     return _s == other._s;
@@ -67,6 +93,10 @@ public:
 private:
   sock_t _s;
   Protocol *_protocol;
+
+  // Generator state
+  MoveOnlyFunction<DataEvent(void)> _generator;
+  std::mutex _generatorMutex;
 
   // Strand state (used by ThreadPoolDispatcher)
   std::queue<MoveOnlyFunction<void()>> _taskQueue;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <mutex>
 #include <queue>
 #include <unordered_map>
 
@@ -105,10 +104,8 @@ public:
       auto conn = std::make_shared<Connection>(as, protocol);
       _connections.emplace(as, conn);
       _loop->add(as, this);
-      _dispatcher->onConnect(as);
-      _dispatcher->postForConnection(conn, [conn] {
-        conn->getProtocol()->onConnect(conn);
-      });
+      _dispatcher->onConnect(conn);
+      _dispatcher->postForConnection(conn, [conn] { conn->getProtocol()->onConnect(conn); });
     }
     else
     {
@@ -133,13 +130,10 @@ public:
         else if (len == 0)
         {
           logger(TCPSERVER, LogLevel::DEBUG).log("recv::disconnect", s);
+          if (conn->hasGenerator())
           {
-            std::scoped_lock lock(_generatorsMutex);
-            if (_generators.contains(s))
-            {
-              logger(TCPSERVER, LogLevel::DEBUG).log("disconnect::gen::stop", s);
-              _generators.erase(s);
-            }
+            logger(TCPSERVER, LogLevel::DEBUG).log("disconnect::gen::stop", s);
+            conn->clearGenerator();
           }
           close(s);
         }
@@ -170,12 +164,16 @@ public:
 
   virtual void handleWriting(sock_t s) override
   {
-    logger(TCPSERVER, LogLevel::DEBUG).log(s);
-    DrainResult result;
+    auto it = _connections.find(s);
+    if (it == _connections.end())
     {
-      auto sendLock = _dispatcher->lockSend(s);
-      result = drainSent(s);
+      logger(TCPSERVER, LogLevel::DEBUG).log("unknown", s);
+      return;
     }
+
+    auto conn = it->second;
+    logger(TCPSERVER, LogLevel::DEBUG).log(s);
+    DrainResult result = drainSent(conn);
     logger(TCPSERVER, LogLevel::DEBUG).log(s, result);
     switch (result)
     {
@@ -188,41 +186,34 @@ public:
     case DrainResult::Partial:
       break;
     }
+    
+    if (it != _connections.end() && it->second->hasGenerator())
     {
-      std::scoped_lock lock(_generatorsMutex);
-      if (_generators.contains(s))
+      auto conn = it->second;
+      if (result == DrainResult::Close)
       {
-        if (result != DrainResult::Close)
-        {
-          logger(TCPSERVER, LogLevel::DEBUG).log("gen:cont", s);
-          auto conn = _connections.at(s);
-          _dispatcher->postRecv([this, conn] {
-            DataEvent data;
-            {
-              std::scoped_lock lock(_generatorsMutex);
-              auto it = _generators.find(conn->getId());
-              if (it == _generators.end())
-              {
-                return;
-              }
-              data = it->second();
-            }
+        logger(TCPSERVER, LogLevel::DEBUG).log("gen:stop", s);
+        conn->clearGenerator();
+      }
+      else
+      {
+        logger(TCPSERVER, LogLevel::DEBUG).log("gen:cont", s);
+        _dispatcher->postRecv([this, conn] {
+          if (conn->hasGenerator())
+          {
+            auto data = conn->callGenerator();
             send(conn, std::move(data));
-          });
-        }
-        else
-        {
-          logger(TCPSERVER, LogLevel::DEBUG).log("gen::stop", s);
-          _generators.erase(s);
-        }
+          }
+        });
       }
     }
   }
 
-  DrainResult drainSent(sock_t s)
+  DrainResult drainSent(ConnectionPtr conn)
   {
-    auto &queue = _dispatcher->getSendQueue(s);
-    logger(TCPSERVER, LogLevel::DEBUG).log(s, queue.size());
+    auto sendLock = _dispatcher->lockSend();
+    auto &queue = _dispatcher->getSendQueue(conn);
+    logger(TCPSERVER, LogLevel::DEBUG).log(conn->getId(), queue.size());
     if (queue.empty())
     {
       return DrainResult::Done;
@@ -242,7 +233,7 @@ public:
       // drain if needed
       if (!drained)
       {
-        if (!drainSentData(s, data))
+        if (!drainSentData(conn, data))
         {
           return DrainResult::Partial; // EAGAIN, wait for next handleWriting
         }
@@ -259,7 +250,7 @@ public:
     return DrainResult::Done;
   }
 
-  bool drainSentData(sock_t s, DataEvent &data)
+  bool drainSentData(ConnectionPtr conn, DataEvent &data)
   {
     if (data.buffer.empty())
     {
@@ -268,9 +259,9 @@ public:
 
     do
     {
-      auto len = Socket::send(s, data.buffer.data() + data.sent, data.buffer.size() - data.sent, 0);
+      auto len = Socket::send(conn->getId(), data.buffer.data() + data.sent, data.buffer.size() - data.sent, 0);
       auto err = errno;
-      logger(TCPSERVER, LogLevel::DEBUG).log(s, len, data.close);
+      logger(TCPSERVER, LogLevel::DEBUG).log(conn->getId(), len, data.close);
       if (len < 0)
       {
         if (err == EAGAIN || err == EWOULDBLOCK)
@@ -280,7 +271,7 @@ public:
         }
         else
         {
-          logger(TCPSERVER, LogLevel::ERROR).log(s, len, err, ::strerror(err));
+          logger(TCPSERVER, LogLevel::ERROR).log(conn->getId(), len, err, ::strerror(err));
           data.close = true;              // mark for close
           data.sent = data.buffer.size(); // mark as "done" so close triggers
           return true;
@@ -296,11 +287,10 @@ public:
 
   void send(ConnectionPtr conn, DataEvent data)
   {
-    auto s = conn->getId();
-    _dispatcher->send(s, std::move(data));
+    _dispatcher->send(conn, std::move(data));
     if (_notifyFd < 0)
     {
-      _loop->add(s, this, true); // single-thread: enable write watching directly
+      _loop->add(conn->getId(), this, true); // single-thread: enable write watching directly
     }
     // in threaded mode, ThreadPoolDispatcher::send() notifies via eventfd
   }
@@ -308,11 +298,7 @@ public:
   void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
   {
     auto data = generator();
-    auto s = conn->getId();
-    {
-      std::scoped_lock lock(_generatorsMutex);
-      _generators.emplace(s, std::move(generator));
-    }
+    conn->setGenerator(std::move(generator));
     send(conn, std::move(data));
   }
 
@@ -321,22 +307,17 @@ private:
   {
     logger(TCPSERVER, LogLevel::DEBUG).log(s);
     auto it = _connections.find(s);
-    bool known = it != _connections.end();
-    if (known)
+    if (it != _connections.end())
     {
       auto conn = it->second;
-      _dispatcher->postForConnection(conn, [conn] {
+      _dispatcher->postForConnection(conn, [conn, dispatcher = _dispatcher] {
         conn->getProtocol()->onDisconnect(conn);
+        dispatcher->onDisconnect(conn);
       });
+      _connections.erase(s);
     }
-    _dispatcher->onDisconnect(s);
     _loop->del(s);
-    if (known)
-    {
-      _connections.erase(it);
-    }
     // _connections.emplace(as, conn);
-    // _protocols.emplace(as, protocol);
     // _loop->add(as, this);
     // _dispatcher->onConnect(as);
     // _protocol->onConnect(conn);
@@ -347,8 +328,6 @@ private:
   sock_t _notifyFd;
   std::unordered_map<sock_t, Protocol *> _listeners;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
-  std::unordered_map<sock_t, MoveOnlyFunction<DataEvent(void)>> _generators;
-  std::mutex _generatorsMutex;
 };
 
 } // namespace Netpp

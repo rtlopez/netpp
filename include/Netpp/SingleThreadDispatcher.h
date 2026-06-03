@@ -16,30 +16,30 @@ static const char *DISPATCH = "dispatch";
 class SingleThreadDispatcher : public Dispatcher
 {
 public:
-  void send(sock_t s, DataEvent data) override
+  void send(ConnectionPtr conn, DataEvent data) override
   {
-    getSendQueue(s).push(std::move(data));
+    getSendQueue(conn).push(std::move(data));
   }
 
-  void onConnect(sock_t s) override
+  void onConnect(ConnectionPtr conn) override
   {
-    logger(DISPATCH, LogLevel::DEBUG).log(s);
-    _sendQueue.emplace(s, std::queue<DataEvent>{});
+    logger(DISPATCH, LogLevel::DEBUG).log(conn->getId());
+    _sendQueues.emplace(conn->getId(), std::queue<DataEvent>{});
   }
 
-  void onDisconnect(sock_t s) override
+  void onDisconnect(ConnectionPtr conn) override
   {
-    logger(DISPATCH, LogLevel::DEBUG).log(s);
-    _sendQueue.erase(s);
+    logger(DISPATCH, LogLevel::DEBUG).log(conn->getId());
+    _sendQueues.erase(conn->getId());
   }
 
-  std::queue<DataEvent> &getSendQueue(sock_t s) override
+  std::queue<DataEvent> &getSendQueue(ConnectionPtr conn) override
   {
-    return _sendQueue.at(s);
+    return _sendQueues.at(conn->getId());
   }
 
 private:
-  std::unordered_map<sock_t, std::queue<DataEvent>> _sendQueue;
+  std::unordered_map<sock_t, std::queue<DataEvent>> _sendQueues;
 };
 
 } // namespace Netpp

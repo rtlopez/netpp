@@ -20,7 +20,7 @@ static const char *EPOLL = "epoll";
 class EventLoopEpoll : public EventLoop
 {
 public:
-  EventLoopEpoll() : _fd(-1), _running(true), _timeout(10000)
+  EventLoopEpoll() : _fd(-1), _running(true), _timeout(30000)
   {
     sock_t fd = ::epoll_create1(0);
     int err = errno;
