@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -41,14 +42,16 @@ public:
   void onConnect(ConnectionPtr conn) override
   {
     int s = conn->getId();
-    _requests.emplace(s, std::make_shared<HttpRequest>());
     logger(HTTP, LogLevel::DEBUG).log(s, conn->getPeerName());
+    std::scoped_lock lock(_requestsMutex);
+    _requests.emplace(s, std::make_shared<HttpRequest>());
   }
 
   void onDisconnect(ConnectionPtr conn) override
   {
     int s = conn->getId();
     logger(HTTP, LogLevel::DEBUG).log(s, conn->getPeerName());
+    std::scoped_lock lock(_requestsMutex);
     _requests.erase(s);
   }
 
@@ -58,7 +61,12 @@ public:
 
     logger(HTTP, LogLevel::DEBUG).log(s, data.buffer.size());
 
-    auto req = _requests.at(s);
+    HttpRequestPtr req;
+    {
+      std::scoped_lock lock(_requestsMutex);
+      req = _requests.at(s);
+    }
+
     try
     {
       req->receive(reinterpret_cast<const char *>(data.buffer.data()), data.buffer.size());
@@ -127,7 +135,8 @@ private:
   }
 
   TcpServer *_server;
-  std::unordered_map<int, RequestPtr> _requests;
+  std::unordered_map<int, HttpRequestPtr> _requests;
+  std::mutex _requestsMutex;
   MiddlewareCallback _middleware;
 };
 

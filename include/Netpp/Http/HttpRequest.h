@@ -195,6 +195,6 @@ private:
   }
 };
 
-using RequestPtr = std::shared_ptr<HttpRequest>;
+using HttpRequestPtr = std::shared_ptr<HttpRequest>;
 
 } // namespace Netpp::Http
