@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <queue>
 #include <unordered_map>
 
 #include <sys/eventfd.h>
@@ -104,7 +103,6 @@ public:
       auto conn = std::make_shared<Connection>(as, protocol);
       _connections.emplace(as, conn);
       _loop->add(as, this);
-      _dispatcher->onConnect(conn);
       _dispatcher->postForConnection(conn, [conn] { conn->getProtocol()->onConnect(conn); });
     }
     else
@@ -211,8 +209,8 @@ public:
 
   DrainResult drainSent(ConnectionPtr conn)
   {
-    auto sendLock = _dispatcher->lockSend();
-    auto &queue = _dispatcher->getSendQueue(conn);
+    std::scoped_lock sendLock(conn->sendMutex());
+    auto &queue = conn->sendQueue();
     logger(TCPSERVER, LogLevel::DEBUG).log(conn->getId(), queue.size());
     if (queue.empty())
     {
@@ -310,17 +308,12 @@ private:
     if (it != _connections.end())
     {
       auto conn = it->second;
-      _dispatcher->postForConnection(conn, [conn, dispatcher = _dispatcher] {
+      _dispatcher->postForConnection(conn, [conn] {
         conn->getProtocol()->onDisconnect(conn);
-        dispatcher->onDisconnect(conn);
       });
       _connections.erase(s);
     }
     _loop->del(s);
-    // _connections.emplace(as, conn);
-    // _loop->add(as, this);
-    // _dispatcher->onConnect(as);
-    // _protocol->onConnect(conn);
   }
 
   EventLoop *_loop;

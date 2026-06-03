@@ -4,7 +4,6 @@
 #include <mutex>
 #include <queue>
 #include <thread>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -69,39 +68,10 @@ public:
   void send(ConnectionPtr conn, DataEvent data) override
   {
     {
-      std::scoped_lock lock(_sendMutex);
-      auto it = _sendQueues.find(conn->getId());
-      if (it == _sendQueues.end())
-      {
-        return; // connection already closed
-      }
-      it->second.push(std::move(data));
+      std::scoped_lock lock(conn->sendMutex());
+      conn->sendQueue().push(std::move(data));
     }
     notifyWrite(conn);
-  }
-
-  void onConnect(ConnectionPtr conn) override
-  {
-    logger(DISPATCH, LogLevel::DEBUG).log(conn->getId());
-    std::scoped_lock lock(_sendMutex);
-    _sendQueues.emplace(conn->getId(), std::queue<DataEvent>{});
-  }
-
-  void onDisconnect(ConnectionPtr conn) override
-  {
-    logger(DISPATCH, LogLevel::DEBUG).log(conn->getId());
-    std::scoped_lock lock(_sendMutex);
-    _sendQueues.erase(conn->getId());
-  }
-
-  std::queue<DataEvent> &getSendQueue(ConnectionPtr conn) override
-  {
-    return _sendQueues.at(conn->getId());
-  }
-
-  std::unique_lock<std::mutex> lockSend() override
-  {
-    return std::unique_lock<std::mutex>(_sendMutex);
   }
 
   // --- Thread pool interface ---
@@ -203,10 +173,6 @@ private:
   std::queue<MoveOnlyFunction<void()>> _taskQueue;
   std::mutex _taskMutex;
   std::condition_variable _taskCv;
-
-  // Send queues (workers produce, main thread consumes)
-  std::unordered_map<sock_t, std::queue<DataEvent>> _sendQueues;
-  std::mutex _sendMutex;
 
   // Notification
   sock_t _eventFd;

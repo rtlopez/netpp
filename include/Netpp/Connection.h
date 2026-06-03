@@ -84,15 +84,24 @@ public:
     return !(*this == other);
   }
 
+  // Send queue: per-connection outgoing data
+  std::mutex &sendMutex() { return _sendMutex; }
+  std::queue<DataEvent> &sendQueue() { return _sendQueue; }
+
   // Strand: per-connection task serialization
   std::mutex &strandMutex() { return _strandMutex; }
   std::queue<MoveOnlyFunction<void()>> &taskQueue() { return _taskQueue; }
+
   bool isProcessing() const { return _processing; }
   void setProcessing(bool v) { _processing = v; }
 
 private:
   sock_t _s;
   Protocol *_protocol;
+
+  // Send queue state
+  std::queue<DataEvent> _sendQueue;
+  std::mutex _sendMutex;
 
   // Generator state
   MoveOnlyFunction<DataEvent(void)> _generator;
