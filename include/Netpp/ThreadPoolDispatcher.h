@@ -91,6 +91,7 @@ public:
 
   void postRecv(MoveOnlyFunction<void()> task) override
   {
+    logger(DISPATCH, LogLevel::TRACE).log("");
     {
       std::scoped_lock lock(_taskMutex);
       _taskQueue.push(std::move(task));
@@ -100,6 +101,7 @@ public:
 
   void postForConnection(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
   {
+    logger(DISPATCH, LogLevel::TRACE).log(conn->getId());
     bool shouldSchedule = false;
     {
       std::scoped_lock lock(conn->strandMutex());
@@ -124,13 +126,14 @@ private:
       MoveOnlyFunction<void()> task;
       {
         std::scoped_lock lock(conn->strandMutex());
-        if (conn->taskQueue().empty())
+        auto &queue = conn->taskQueue();
+        if (queue.empty())
         {
           conn->setProcessing(false);
           return;
         }
-        task = std::move(conn->taskQueue().front());
-        conn->taskQueue().pop();
+        task = std::move(queue.front());
+        queue.pop();
       }
       task();
     }
@@ -151,6 +154,7 @@ private:
         task = std::move(_taskQueue.front());
         _taskQueue.pop();
       }
+      logger(DISPATCH, LogLevel::TRACE).log("");
       task();
     }
   }

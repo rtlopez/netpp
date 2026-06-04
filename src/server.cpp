@@ -16,9 +16,9 @@
 #include "Netpp/FileStream.h"
 #include "Netpp/Http/HttpProtocol.h"
 #include "Netpp/Http/HttpRouter.h"
-#include "Netpp/SignalHandler.h"
-// #include "Netpp/SingleThreadDispatcher.h"
 #include "Netpp/Logger/Logger.h"
+#include "Netpp/SignalHandler.h"
+#include "Netpp/SingleThreadDispatcher.h"
 #include "Netpp/TcpServer.h"
 #include "Netpp/ThreadPoolDispatcher.h"
 
@@ -69,9 +69,9 @@ struct CliArgs
       exit(1);
     }
 
-    if (workerThreads <= 0)
+    if (workerThreads < 0)
     {
-      std::cerr << "Invalid --threads value. It must be greater than 0\n";
+      std::cerr << "Invalid --threads value. It must be greater or equal to 0\n";
       exit(1);
     }
 
@@ -111,9 +111,16 @@ int main(int argc, const char **argv)
 
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
 
-  // Netpp::SingleThreadDispatcher dispatcher;
-  Netpp::ThreadPoolDispatcher dispatcher(args.workerThreads);
-  Netpp::TcpServer tcpServer{&loop, &dispatcher};
+  std::unique_ptr<Netpp::Dispatcher> dispatcher;
+  if (args.workerThreads > 0)
+  {
+    dispatcher.reset(new Netpp::ThreadPoolDispatcher(args.workerThreads));
+  }
+  else
+  {
+    dispatcher.reset(new Netpp::SingleThreadDispatcher());
+  }
+  Netpp::TcpServer tcpServer{&loop, dispatcher.get()};
 
   Netpp::Chat::ChatProtocol chat{&tcpServer};
   Netpp::Echo::EchoProtocol echo{&tcpServer};

@@ -90,7 +90,13 @@ public:
 
     if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, nullptr) < 0)
     {
-      throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_DEL) failed");
+      int err = errno;
+      // EBADF: fd already closed; ENOENT: fd was never registered — both are benign
+      if (err != EBADF && err != ENOENT)
+      {
+        throw EventLoopException(err, "epoll_ctl(EPOLL_CTL_DEL) failed");
+      }
+      logger(EPOLL, LogLevel::WARN).log("epoll_ctl(EPOLL_CTL_DEL) ignored", fd, err, ::strerror(err));
     }
 
     _handlers.erase(fd);
@@ -134,7 +140,12 @@ public:
   void handle(const epoll_event &ev)
   {
     logger(EPOLL, LogLevel::TRACE).log(ev.data.fd, ev.events);
-    EventLoopHandler *handler = _handlers[ev.data.fd];
+    auto it = _handlers.find(ev.data.fd);
+    if (it == _handlers.end())
+    {
+      return;
+    }
+    EventLoopHandler *handler = it->second;
     if (ev.events & (EPOLLERR | EPOLLHUP))
     {
       handler->handleError(ev.data.fd);
@@ -144,7 +155,8 @@ public:
     {
       handler->handleWriting(ev.data.fd);
     }
-    if (ev.events & (EPOLLIN | EPOLLPRI))
+    // re-check: handleWriting may have closed and removed this fd
+    if (_handlers.contains(ev.data.fd) && ev.events & (EPOLLIN | EPOLLPRI))
     {
       handler->handleReading(ev.data.fd);
     }

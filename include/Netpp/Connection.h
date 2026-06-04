@@ -47,7 +47,10 @@ public:
     return static_cast<int>(_s);
   }
 
-  Protocol *getProtocol() const { return _protocol; }
+  Protocol *getProtocol() const
+  {
+    return _protocol;
+  }
 
   // Generator: produces DataEvents for streaming sends
   void setGenerator(MoveOnlyFunction<DataEvent(void)> gen)
@@ -62,7 +65,7 @@ public:
     return static_cast<bool>(_generator);
   }
 
-  DataEvent callGenerator()
+  DataEvent runGenerator()
   {
     std::scoped_lock lock(_generatorMutex);
     return _generator();
@@ -85,15 +88,46 @@ public:
   }
 
   // Send queue: per-connection outgoing data
-  std::mutex &sendMutex() { return _sendMutex; }
-  std::queue<DataEvent> &sendQueue() { return _sendQueue; }
+  std::mutex &sendMutex()
+  {
+    return _sendMutex;
+  }
+
+  std::queue<DataEvent> &sendQueue()
+  {
+    return _sendQueue;
+  }
 
   // Strand: per-connection task serialization
-  std::mutex &strandMutex() { return _strandMutex; }
-  std::queue<MoveOnlyFunction<void()>> &taskQueue() { return _taskQueue; }
+  std::mutex &strandMutex()
+  {
+    return _strandMutex;
+  }
 
-  bool isProcessing() const { return _processing; }
-  void setProcessing(bool v) { _processing = v; }
+  std::queue<MoveOnlyFunction<void()>> &taskQueue()
+  {
+    return _taskQueue;
+  }
+
+  bool isProcessing() const
+  {
+    return _processing;
+  }
+
+  void setProcessing(bool v)
+  {
+    _processing = v;
+  }
+
+  void setClosed(bool v)
+  {
+    _closed = v;
+  }
+
+  bool isClosed() const
+  {
+    return _closed;
+  }
 
 private:
   sock_t _s;
@@ -111,6 +145,9 @@ private:
   std::queue<MoveOnlyFunction<void()>> _taskQueue;
   std::mutex _strandMutex;
   bool _processing = false;
+
+  // remote closed connection
+  bool _closed = false;
 };
 
 using ConnectionPtr = std::shared_ptr<Connection>;

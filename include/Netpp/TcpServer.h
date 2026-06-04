@@ -127,6 +127,7 @@ public:
         }
         else if (len == 0)
         {
+          conn->setClosed(true);
           logger(TCPSERVER, LogLevel::DEBUG).log("recv::disconnect", s);
           if (conn->hasGenerator())
           {
@@ -162,16 +163,18 @@ public:
 
   virtual void handleWriting(sock_t s) override
   {
+    logger(TCPSERVER, LogLevel::DEBUG).log(s);
+
     auto it = _connections.find(s);
     if (it == _connections.end())
     {
-      logger(TCPSERVER, LogLevel::DEBUG).log("unknown", s);
+      logger(TCPSERVER, LogLevel::WARN).log("unknown", s);
       return;
     }
 
     auto conn = it->second;
-    logger(TCPSERVER, LogLevel::DEBUG).log(s);
     DrainResult result = drainSent(conn);
+
     logger(TCPSERVER, LogLevel::DEBUG).log(s, result);
     switch (result)
     {
@@ -184,26 +187,17 @@ public:
     case DrainResult::Partial:
       break;
     }
-    
-    if (it != _connections.end() && it->second->hasGenerator())
+
+    if (result != DrainResult::Close && conn->hasGenerator())
     {
-      auto conn = it->second;
-      if (result == DrainResult::Close)
-      {
-        logger(TCPSERVER, LogLevel::DEBUG).log("gen:stop", s);
-        conn->clearGenerator();
-      }
-      else
-      {
-        logger(TCPSERVER, LogLevel::DEBUG).log("gen:cont", s);
-        _dispatcher->postRecv([this, conn] {
-          if (conn->hasGenerator())
-          {
-            auto data = conn->callGenerator();
-            send(conn, std::move(data));
-          }
-        });
-      }
+      logger(TCPSERVER, LogLevel::DEBUG).log("gen:cont", s);
+      _dispatcher->postRecv([this, conn] {
+        if (!conn->isClosed() && conn->hasGenerator())
+        {
+          auto data = conn->runGenerator();
+          send(conn, std::move(data));
+        }
+      });
     }
   }
 
@@ -219,32 +213,32 @@ public:
     while (!queue.empty())
     {
       auto &data = queue.front();
-      bool drained = data.sent >= data.buffer.size();
 
-      // re-entry check: if already marked for close and fully sent, close connection
-      if (data.close && drained)
+      // connection is closed by remote
+      if (conn->isClosed())
       {
-        queue.pop();
+        // do not need to prune queue as connection destuctor will do it
         return DrainResult::Close;
       }
 
       // drain if needed
-      if (!drained)
+      if (data.sent < data.buffer.size())
       {
         if (!drainSentData(conn, data))
         {
+          // not all chunk data were sent, we need to reply drain, do not pop yet
           return DrainResult::Partial; // EAGAIN, wait for next handleWriting
         }
       }
 
-      // if it is closing batch, wait till fully sent before popping
       if (data.close)
       {
-        return DrainResult::Partial; // will keep monitoring
+        return DrainResult::Close; // chunk with close flag
       }
 
       queue.pop();
     }
+
     return DrainResult::Done;
   }
 
@@ -267,13 +261,10 @@ public:
           // unable to drain connection buffer, wait for next writable event
           return false;
         }
-        else
-        {
-          logger(TCPSERVER, LogLevel::ERROR).log(conn->getId(), len, err, ::strerror(err));
-          data.close = true;              // mark for close
-          data.sent = data.buffer.size(); // mark as "done" so close triggers
-          return true;
-        }
+        logger(TCPSERVER, LogLevel::ERROR).log(conn->getId(), len, err, ::strerror(err));
+        data.close = true;              // mark for close
+        data.sent = data.buffer.size(); // mark as "done" so close triggers
+        return true;
       }
       else
       {
@@ -283,16 +274,6 @@ public:
     return true;
   }
 
-  void send(ConnectionPtr conn, DataEvent data)
-  {
-    _dispatcher->send(conn, std::move(data));
-    if (_notifyFd < 0)
-    {
-      _loop->add(conn->getId(), this, true); // single-thread: enable write watching directly
-    }
-    // in threaded mode, ThreadPoolDispatcher::send() notifies via eventfd
-  }
-
   void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
   {
     auto data = generator();
@@ -300,20 +281,30 @@ public:
     send(conn, std::move(data));
   }
 
+  void send(ConnectionPtr conn, DataEvent data)
+  {
+    _dispatcher->send(conn, std::move(data));
+    if (_notifyFd < 0)
+    {
+      // single-thread: enable write watching directly
+      _loop->add(conn->getId(), this, true);
+    }
+    // in threaded mode, ThreadPoolDispatcher::send() notifies via eventfd
+  }
+
 private:
   void close(sock_t s)
   {
     logger(TCPSERVER, LogLevel::DEBUG).log(s);
     auto it = _connections.find(s);
-    if (it != _connections.end())
+    if (it == _connections.end())
     {
-      auto conn = it->second;
-      _dispatcher->postForConnection(conn, [conn] {
-        conn->getProtocol()->onDisconnect(conn);
-      });
-      _connections.erase(s);
+      return; // already closed
     }
-    _loop->del(s);
+    _loop->del(s); // remove from epoll before closing the fd
+    auto conn = it->second;
+    _connections.erase(it); // Connection destructor closes the fd
+    _dispatcher->postForConnection(conn, [conn] { conn->getProtocol()->onDisconnect(conn); });
   }
 
   EventLoop *_loop;
