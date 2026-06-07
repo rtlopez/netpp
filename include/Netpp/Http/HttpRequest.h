@@ -9,9 +9,13 @@
 #include <vector>
 
 #include "Netpp/Http/HttpException.h"
+#include "Netpp/Logger/Logger.h"
 
 namespace Netpp::Http
 {
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *HTTPR = "http";
 
 class HttpRequest
 {
@@ -31,6 +35,11 @@ public:
   std::map<std::string, std::string> headers;
   std::vector<char> header;
   std::vector<char> body;
+
+  virtual ~HttpRequest()
+  {
+    logger(HTTPR, LogLevel::DEBUG).log("");
+  }
 
   void receive(const char *c, size_t len)
   {

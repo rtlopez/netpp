@@ -2,9 +2,7 @@
 
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <unordered_map>
 
 #include "Netpp/DataEvent.h"
 #include "Netpp/Http/HttpException.h"
@@ -39,27 +37,15 @@ public:
     _middleware = std::move(middleware);
   }
 
-  void onConnect(ConnectionPtr conn) override
-  {
-    int s = conn->getId();
-    logger(HTTP, LogLevel::DEBUG).log(s, conn->getPeerName());
-    std::scoped_lock lock(_requestsMutex);
-    _requests.emplace(s, std::make_shared<HttpRequest>());
-  }
-
-  void onDisconnect(ConnectionPtr conn) override
-  {
-    int s = conn->getId();
-    logger(HTTP, LogLevel::DEBUG).log(s, conn->getPeerName());
-    std::scoped_lock lock(_requestsMutex);
-    _requests.erase(s);
-  }
-
   HttpRequestPtr getRequest(ConnectionPtr conn)
   {
-    int s = conn->getId();
-    std::scoped_lock lock(_requestsMutex);
-    return _requests.at(s);
+    auto req = conn->getContext<HttpRequest>();
+    if (!req)
+    {
+      req = std::make_shared<HttpRequest>();
+      conn->setContext(req);
+    }
+    return req;
   }
 
   void onReceive(ConnectionPtr conn, DataEvent data) override
@@ -137,8 +123,6 @@ private:
   }
 
   TcpServer *_server;
-  std::unordered_map<int, HttpRequestPtr> _requests;
-  std::mutex _requestsMutex;
   MiddlewareCallback _middleware;
 };
 

@@ -24,16 +24,6 @@ public:
   {
   }
 
-  void onConnect(ConnectionPtr conn) override
-  {
-    logger(ECHO, LogLevel::DEBUG).log(conn->getPeerName());
-  }
-
-  void onDisconnect(ConnectionPtr conn) override
-  {
-    logger(ECHO, LogLevel::DEBUG).log(conn->getPeerName());
-  }
-
   void onReceive(ConnectionPtr conn, DataEvent data) override
   {
     auto str = std::string(data.buffer.begin(), data.buffer.end());

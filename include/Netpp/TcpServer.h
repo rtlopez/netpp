@@ -62,12 +62,6 @@ public:
 
   virtual void handleError(sock_t s) override
   {
-    auto it = _connections.find(s);
-    if (it != _connections.end())
-    {
-      auto conn = it->second;
-      _dispatcher->postForConnection(conn, [conn] { conn->getProtocol()->onError(conn); });
-    }
     close(s);
   }
 
@@ -103,7 +97,9 @@ public:
       auto conn = std::make_shared<Connection>(as, protocol);
       _connections.emplace(as, conn);
       _loop->add(as, this);
-      _dispatcher->postForConnection(conn, [conn] { conn->getProtocol()->onConnect(conn); });
+      DataEvent data{.buffer = DataEvent::Buffer(), .connect = true};
+      _dispatcher->postForConnection(
+          conn, [conn, data = std::move(data)]() mutable { conn->getProtocol()->onReceive(conn, std::move(data)); });
     }
     else
     {
@@ -199,6 +195,20 @@ public:
         }
       });
     }
+  }
+
+  std::vector<ConnectionPtr> getProtocolConnections(Protocol *protocol) const
+  {
+    // TODO: lock for other threads access
+    std::vector<ConnectionPtr> connections;
+    for (const auto &pair : _connections)
+    {
+      if (pair.second->getProtocol() == protocol && !pair.second->isClosed())
+      {
+        connections.push_back(pair.second);
+      }
+    }
+    return connections;
   }
 
   DrainResult drainSent(ConnectionPtr conn)
@@ -304,7 +314,6 @@ private:
     _loop->del(s); // remove from epoll before closing the fd
     auto conn = it->second;
     _connections.erase(it); // Connection destructor closes the fd
-    _dispatcher->postForConnection(conn, [conn] { conn->getProtocol()->onDisconnect(conn); });
   }
 
   EventLoop *_loop;

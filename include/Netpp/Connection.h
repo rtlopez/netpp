@@ -30,6 +30,10 @@ public:
   virtual ~Connection()
   {
     logger(CONNECTION, LogLevel::DEBUG).log(_s);
+    if (_context)
+    {
+      _context.reset();
+    }
     if (_s >= 0)
     {
       Socket::close(_s);
@@ -50,6 +54,19 @@ public:
   Protocol *getProtocol() const
   {
     return _protocol;
+  }
+
+  // Protocol-specific context: type-erased, owned by the connection and
+  // released automatically when the connection is destroyed.
+  void setContext(std::shared_ptr<void> ctx)
+  {
+    _context = std::move(ctx);
+  }
+
+  template <typename T>
+  std::shared_ptr<T> getContext() const
+  {
+    return std::static_pointer_cast<T>(_context);
   }
 
   // Generator: produces DataEvents for streaming sends
@@ -132,6 +149,9 @@ public:
 private:
   sock_t _s;
   Protocol *_protocol;
+
+  // Protocol-specific context (type-erased)
+  std::shared_ptr<void> _context;
 
   // Send queue state
   std::queue<DataEvent> _sendQueue;

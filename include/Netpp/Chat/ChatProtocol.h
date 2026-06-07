@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <unordered_set>
 
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
@@ -25,29 +24,31 @@ public:
   {
   }
 
-  void onConnect(ConnectionPtr conn) override
+  std::shared_ptr<int> getContext(ConnectionPtr conn)
   {
-    _clients.insert(conn);
-
-    std::string welcome = "Welcome to the chat room\n";
-    DataEvent resp{DataEvent::Buffer(welcome.begin(), welcome.end())};
-    _server->send(conn, std::move(resp));
-
-    logger(CHAT, LogLevel::DEBUG).log(conn->getPeerName());
-  }
-
-  void onDisconnect(ConnectionPtr conn) override
-  {
-    _clients.erase(conn);
-
-    logger(CHAT, LogLevel::DEBUG).log(conn->getPeerName());
+    auto context = conn->getContext<int>();
+    if (!context)
+    {
+      context = std::make_shared<int>(0);
+      conn->setContext(context);
+    }
+    return context;
   }
 
   void onReceive(ConnectionPtr conn, DataEvent data) override
   {
     auto str = std::string(data.buffer.begin(), data.buffer.end());
 
-    for (const ConnectionPtr &c : _clients)
+    if (data.connect)
+    {
+      std::string welcome = "Welcome to the chat room\n";
+      DataEvent resp{DataEvent::Buffer(welcome.begin(), welcome.end())};
+      _server->send(conn, std::move(resp));
+      return;
+    }
+
+    auto clients = _server->getProtocolConnections(this);
+    for (const ConnectionPtr &c : clients)
     {
       if (c != conn)
       {
@@ -70,7 +71,6 @@ public:
 
 private:
   TcpServer *_server;
-  std::unordered_set<ConnectionPtr> _clients;
 };
 
 } // namespace Netpp::Chat

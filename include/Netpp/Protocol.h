@@ -11,13 +11,7 @@ class Protocol
 public:
   virtual ~Protocol() = default;
 
-  virtual void onConnect(ConnectionPtr conn) = 0;
   virtual void onReceive(ConnectionPtr conn, DataEvent data) = 0;
-  virtual void onDisconnect(ConnectionPtr conn) = 0;
-  virtual void onError(ConnectionPtr)
-  {
-    // default implementation does nothing
-  }
 };
 
 } // namespace Netpp

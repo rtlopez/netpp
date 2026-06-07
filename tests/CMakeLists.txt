@@ -9,7 +9,7 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 add_executable(HttpRequestTest HttpRequestTest.cpp)
-target_link_libraries(HttpRequestTest GTest::gtest_main)
+target_link_libraries(HttpRequestTest GTest::gtest_main netpp_logger)
 
 add_executable(RingBufferTest RingBufferTest.cpp)
 target_link_libraries(RingBufferTest GTest::gtest_main)
