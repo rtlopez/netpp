@@ -26,10 +26,28 @@ public:
 
   void onReceive(ConnectionPtr conn, DataEvent data) override
   {
+    if (data.connect)
+    {
+      return;
+    }
+
     auto str = std::string(data.buffer.begin(), data.buffer.end());
 
-    DataEvent resp{DataEvent::Buffer(str.begin(), str.end())};
+    bool close = str.starts_with("close");
+    bool infinite = str.starts_with("inf");
+
+    DataEvent resp{.buffer = DataEvent::Buffer(str.begin(), str.end()), .close = close};
     _server->send(conn, std::move(resp));
+
+    if (infinite)
+    {
+      _server->send(conn, [counter = 0]() mutable -> DataEvent {
+        counter++;
+        logger(ECHO, LogLevel::DEBUG).log(counter);
+        std::string data = "echo " + std::to_string(counter) + "\n";
+        return {.buffer = {data.begin(), data.end()}};
+      });
+    }
 
     for (size_t i = 0; i < 2 && !str.empty(); i++)
     {

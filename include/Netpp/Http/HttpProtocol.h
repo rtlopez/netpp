@@ -50,6 +50,11 @@ public:
 
   void onReceive(ConnectionPtr conn, DataEvent data) override
   {
+    if (data.connect)
+    {
+      return;
+    }
+
     int s = conn->getId();
 
     logger(HTTP, LogLevel::DEBUG).log(s, data.buffer.size());

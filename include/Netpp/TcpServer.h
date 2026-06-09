@@ -36,7 +36,7 @@ public:
     logger(TCPSERVER, LogLevel::DEBUG).log(addr, port);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     Socket::bind(s, addr, port);
-    Socket::listen(s, 128);
+    Socket::listen(s, 256);
     _listeners.emplace(s, protocol);
     _loop->add(s, this);
   }
@@ -51,12 +51,14 @@ public:
     }
   }
 
-  virtual void handleError(sock_t s) override
+  void handleError(sock_t s) override
   {
+    logger(TCPSERVER, LogLevel::DEBUG).log(s);
     close(s);
+    // deferredClose(s);
   }
 
-  virtual void handleReading(sock_t s) override
+  void handleReading(sock_t s) override
   {
     auto lsi = _listeners.find(s);
     if (lsi != _listeners.end())
@@ -82,7 +84,7 @@ public:
     auto it = _connections.find(s);
     if (it != _connections.end())
     {
-      auto &conn = it->second;
+      auto conn = it->second;
 
       DataEvent data{DataEvent::Buffer(4096)};
       auto len = Socket::recv(s, data.buffer.data(), data.buffer.size(), 0);
@@ -98,14 +100,9 @@ public:
       }
       else if (len == 0)
       {
+        logger(TCPSERVER, LogLevel::ERROR).log(s, "closed by peer");
         conn->setClosed(true);
-        logger(TCPSERVER, LogLevel::DEBUG).log("recv::disconnect", s);
-        if (conn->hasGenerator())
-        {
-          logger(TCPSERVER, LogLevel::DEBUG).log("disconnect::gen::stop", s);
-          conn->clearGenerator();
-        }
-        send(conn, DataEvent{.buffer = DataEvent::Buffer(), .close = true}); // trigger close on next drain
+        handleError(s);
         // close(s);
       }
       else if (err == EAGAIN || err == EWOULDBLOCK)
@@ -115,7 +112,9 @@ public:
       else
       {
         logger(TCPSERVER, LogLevel::ERROR).log("recv::error", s, len, err, ::strerror(err));
-        close(s);
+        conn->setClosed(true);
+        handleError(s);
+        //close(s);
       }
       return;
     }
@@ -123,7 +122,7 @@ public:
     logger(TCPSERVER, LogLevel::WARN).log("unknown", s);
   }
 
-  virtual void handleWriting(sock_t s) override
+  void handleWriting(sock_t s) override
   {
     logger(TCPSERVER, LogLevel::DEBUG).log(s);
 
@@ -135,7 +134,7 @@ public:
       DrainResult result =
           _dispatcher->drainSendQueue(conn, [this](ConnectionPtr conn) { return drainSendQueue(conn); });
 
-      logger(TCPSERVER, LogLevel::DEBUG).log(s, result);
+      logger(TCPSERVER, LogLevel::DEBUG).log(s, to_string(result));
       switch (result)
       {
       case DrainResult::Done:
@@ -150,7 +149,7 @@ public:
 
       if (result != DrainResult::Close && conn->hasGenerator())
       {
-        logger(TCPSERVER, LogLevel::DEBUG).log("gen:cont", s);
+        logger(TCPSERVER, LogLevel::DEBUG).log(s, "gen:cont");
         _dispatcher->postRecv([this, conn] {
           if (!conn->isClosed() && conn->hasGenerator())
           {
@@ -180,6 +179,13 @@ public:
 
   DrainResult drainSendQueue(ConnectionPtr conn)
   {
+    // connection is closed by remote
+    if (conn->isClosed())
+    {
+      // do not need to prune queue as connection destuctor will do it
+      return DrainResult::Close;
+    }
+
     auto &queue = conn->sendQueue();
     logger(TCPSERVER, LogLevel::DEBUG).log(conn->getId(), queue.size());
     if (queue.empty())
@@ -252,6 +258,10 @@ public:
 
   void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
   {
+    if (conn->isClosed())
+    {
+      return;
+    }
     conn->setGenerator(std::move(generator));
     send(conn, conn->runGenerator());
   }
@@ -267,6 +277,26 @@ public:
   }
 
 private:
+  void deferredClose(sock_t s)
+  {
+    auto it = _connections.find(s);
+    if (it != _connections.end())
+    {
+      deferredClose(it->second);
+      return;
+    }
+
+    close(s);
+  }
+
+  void deferredClose(ConnectionPtr conn)
+  {
+    logger(TCPSERVER, LogLevel::ERROR).log(conn->getId());
+    conn->setClosed(true);
+    conn->clearGenerator();
+    _loop->notify(conn->getId());
+  }
+
   void close(sock_t s)
   {
     logger(TCPSERVER, LogLevel::DEBUG).log(s);

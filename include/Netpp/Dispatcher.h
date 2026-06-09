@@ -19,6 +19,21 @@ enum DrainResult
   Close
 };
 
+inline const char* to_string(DrainResult r)
+{
+  switch (r)
+  {
+  case DrainResult::Done:
+    return "Done";
+  case DrainResult::Partial:
+    return "Partial";
+  case DrainResult::Close:
+    return "Close";
+  default:
+    return "Unknown";
+  }
+}
+
 class Dispatcher
 {
 public:
