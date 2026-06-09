@@ -1,7 +1,8 @@
 #pragma once
 
+#include <mutex>
 #include <sys/epoll.h>
-#include <unordered_map>
+#include <vector>
 
 #include "EventLoop.h"
 #include "EventLoopHandler.h"
@@ -20,7 +21,7 @@ static const char *EPOLL = "epoll";
 class EventLoopEpoll : public EventLoop
 {
 public:
-  EventLoopEpoll() : _fd(-1), _running(true), _timeout(30000)
+  EventLoopEpoll() : _fd(-1), _running(true), _timeout(30000), _handlers(1024)
   {
     sock_t fd = ::epoll_create1(0);
     int err = errno;
@@ -57,25 +58,46 @@ public:
       events |= EPOLLOUT;
     }
 
-    logger(EPOLL, LogLevel::TRACE).log(fd, events);
+    logger(EPOLL, LogLevel::TRACE).log(fd, events, write ? "write" : "read");
 
     epoll_event event = {events, {.fd = fd}};
 
-    if (_handlers.contains(fd))
-    {
-      if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
-      {
-        throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_MOD) failed");
-      }
-    }
-    else
+    if (!getHandler(fd))
     {
       if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &event) < 0)
       {
-        throw EventLoopException(errno, "epoll_ctl(EPOLL_CTL_ADD) failed");
+        auto err = errno;
+        logger(EPOLL, LogLevel::ERROR).log(fd, events, err, ::strerror(err));
+        throw EventLoopException(err, std::string("epoll_ctl(EPOLL_CTL_ADD) failed fd=") + std::to_string(fd));
       }
+      addHandler(fd, handler);
+    }
+    else
+    {
+      if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
+      {
+        auto err = errno;
+        logger(EPOLL, LogLevel::ERROR).log(fd, events, err, ::strerror(err));
+        throw EventLoopException(err, std::string("epoll_ctl(EPOLL_CTL_MOD) failed fd=") + std::to_string(fd));
+      }
+    }
+  }
 
-      _handlers.emplace(fd, handler);
+  void notify(sock_t fd) override
+  {
+    if (_fd < 0)
+    {
+      throw EventLoopException(-1, "EventLoopEpoll not initialized");
+    }
+
+    epoll_event event = {EPOLLIN | EPOLLPRI | EPOLLOUT, {.fd = fd}};
+
+    logger(EPOLL, LogLevel::TRACE).log(fd, event.events);
+
+    if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
+    {
+      int err = errno;
+      logger(EPOLL, LogLevel::WARN).log(fd, "ignore", err, ::strerror(err));
     }
   }
 
@@ -99,7 +121,7 @@ public:
       logger(EPOLL, LogLevel::WARN).log("epoll_ctl(EPOLL_CTL_DEL) ignored", fd, err, ::strerror(err));
     }
 
-    _handlers.erase(fd);
+    removeHandler(fd);
   }
 
   void run() override
@@ -115,7 +137,7 @@ public:
       if (ret == -1)
       {
         int err = errno;
-        logger(EPOLL, LogLevel::ERROR).log(ret, err);
+        logger(EPOLL, LogLevel::ERROR).log("err", ret, err);
         if (err == EINTR)
         {
           continue; // interrupted, try again
@@ -126,7 +148,7 @@ public:
       if (ret == 0)
       {
         // `epoll_wait` reached its timeout
-        logger(EPOLL, LogLevel::TRACE).log("timeout", ret);
+        logger(EPOLL, LogLevel::TRACE).log("timeout");
         continue;
       }
 
@@ -139,27 +161,74 @@ public:
 
   void handle(const epoll_event &ev)
   {
-    logger(EPOLL, LogLevel::TRACE).log(ev.data.fd, ev.events);
-    auto it = _handlers.find(ev.data.fd);
-    if (it == _handlers.end())
+    auto handler = getHandler(ev.data.fd);
+    logger(EPOLL, LogLevel::TRACE).log(ev.data.fd, ev.events, !!handler);
+    if (!handler)
     {
       return;
     }
-    EventLoopHandler *handler = it->second;
+
     if (ev.events & (EPOLLERR | EPOLLHUP))
     {
       handler->handleError(ev.data.fd);
       return;
     }
+
     if (ev.events & EPOLLOUT)
     {
       handler->handleWriting(ev.data.fd);
     }
+
     // re-check: handleWriting may have closed and removed this fd
-    if (_handlers.contains(ev.data.fd) && ev.events & (EPOLLIN | EPOLLPRI))
+    handler = getHandler(ev.data.fd);
+    if (!handler)
+    {
+      return;
+    }
+
+    if (ev.events & (EPOLLIN | EPOLLPRI))
     {
       handler->handleReading(ev.data.fd);
     }
+  }
+
+  EventLoopHandler *getHandler(sock_t fd)
+  {
+    std::scoped_lock lock(_handlersMutex);
+    if (fd < 0)
+    {
+      throw EventLoopException(-1, "invalid fd");
+    }
+    if (static_cast<size_t>(fd) >= _handlers.size())
+    {
+      return nullptr;
+    }
+    return _handlers[fd];
+  }
+
+  void addHandler(sock_t fd, EventLoopHandler *handler)
+  {
+    if (fd < 0)
+    {
+      throw EventLoopException(-1, "invalid fd");
+    }
+
+    if (static_cast<size_t>(fd) >= _handlers.size())
+    {
+      std::scoped_lock lock(_handlersMutex);
+      _handlers.resize(static_cast<size_t>(fd) + 1024, nullptr);
+    }
+    _handlers[fd] = handler;
+  }
+
+  void removeHandler(sock_t fd)
+  {
+    std::scoped_lock lock(_handlersMutex);
+    if (fd < 0 || static_cast<size_t>(fd) >= _handlers.size())
+    {
+      return;
+    }
+    _handlers[fd] = nullptr;
   }
 
   void stop() override
@@ -168,12 +237,13 @@ public:
   }
 
 private:
-  static const size_t MAX_EVENTS = 32;
+  static const size_t MAX_EVENTS = 64;
   sock_t _fd;
   volatile bool _running;
   int _timeout;
   epoll_event _events[MAX_EVENTS];
-  std::unordered_map<sock_t, EventLoopHandler *> _handlers;
+  std::vector<EventLoopHandler *> _handlers;
+  std::mutex _handlersMutex;
 };
 
 } // namespace Netpp

@@ -29,11 +29,11 @@ public:
 
   virtual ~Connection()
   {
-    logger(CONNECTION, LogLevel::DEBUG).log(_s);
     if (_context)
     {
       _context.reset();
     }
+    logger(CONNECTION, LogLevel::DEBUG).log(_s);
     if (_s >= 0)
     {
       Socket::close(_s);
@@ -167,7 +167,7 @@ private:
   bool _processing = false;
 
   // remote closed connection
-  bool _closed = false;
+  volatile bool _closed = false;
 };
 
 using ConnectionPtr = std::shared_ptr<Connection>;

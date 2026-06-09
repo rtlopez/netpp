@@ -107,7 +107,7 @@ public:
 
     if (afd < 0)
     {
-      logger(SOCKET, LogLevel::ERROR).log(fd, afd, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR).log(afd, fd, err, ::strerror(err));
       if (err == EAGAIN)
       {
         return 0;
@@ -119,11 +119,11 @@ public:
     err = errno;
     if (status < 0)
     {
-      logger(SOCKET, LogLevel::ERROR).log("fcntl(O_NONBLOCK) failed", fd, afd, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR).log("fcntl(O_NONBLOCK) failed", afd, fd, err, ::strerror(err));
       throw SocketException(err, "fcntl(O_NONBLOCK) failed");
     }
 
-    logger(SOCKET, LogLevel::TRACE).log(fd, afd);
+    logger(SOCKET, LogLevel::TRACE).log(afd, fd);
 
     // struct linger sl;
     // sl.l_onoff = 0;  // disable linger

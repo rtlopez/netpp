@@ -114,11 +114,11 @@ int main(int argc, const char **argv)
   std::unique_ptr<Netpp::Dispatcher> dispatcher;
   if (args.workerThreads > 0)
   {
-    dispatcher.reset(new Netpp::ThreadPoolDispatcher(args.workerThreads));
+    dispatcher.reset(new Netpp::ThreadPoolDispatcher(&loop, args.workerThreads));
   }
   else
   {
-    dispatcher.reset(new Netpp::SingleThreadDispatcher());
+    dispatcher.reset(new Netpp::SingleThreadDispatcher(&loop));
   }
   Netpp::TcpServer tcpServer{&loop, dispatcher.get()};
 

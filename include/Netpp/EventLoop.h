@@ -11,6 +11,7 @@ class EventLoop
 public:
   virtual void add(sock_t fd, EventLoopHandler *handler, bool write = false) = 0;
   virtual void del(sock_t fd) = 0;
+  virtual void notify(sock_t fd) = 0;
   virtual void run() = 0;
   virtual void stop() = 0;
 };

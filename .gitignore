@@ -2,6 +2,7 @@
 .cache/
 build/
 
+*.log
 *.o
 /client
 /server

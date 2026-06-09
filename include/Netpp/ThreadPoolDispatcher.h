@@ -4,11 +4,7 @@
 #include <mutex>
 #include <queue>
 #include <thread>
-#include <unordered_set>
 #include <vector>
-
-#include <sys/eventfd.h>
-#include <unistd.h>
 
 #include "Dispatcher.h"
 #include "MoveOnlyFunction.h"
@@ -24,15 +20,9 @@ static const char *DISPATCH = "dispatch";
 class ThreadPoolDispatcher : public Dispatcher
 {
 public:
-  ThreadPoolDispatcher(size_t numThreads = 8) : _stop(false)
+  ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop), _workers(numThreads), _stop(false)
   {
-    _eventFd = ::eventfd(0, EFD_NONBLOCK);
-    if (_eventFd < 0)
-    {
-      throw std::runtime_error("eventfd() failed");
-    }
-
-    logger(DISPATCH, LogLevel::DEBUG).log(numThreads, _eventFd);
+    logger(DISPATCH, LogLevel::DEBUG).log(numThreads);
 
     for (size_t i = 0; i < numThreads; i++)
     {
@@ -42,7 +32,7 @@ public:
 
   virtual ~ThreadPoolDispatcher()
   {
-    logger(DISPATCH, LogLevel::DEBUG).log(_eventFd);
+    logger(DISPATCH, LogLevel::DEBUG).log("");
     {
       std::scoped_lock lock(_taskMutex);
       _stop = true;
@@ -56,38 +46,23 @@ public:
         w.join();
       }
     }
-
-    if (_eventFd >= 0)
-    {
-      ::close(_eventFd);
-    }
   }
 
   // --- Dispatcher interface ---
 
   void send(ConnectionPtr conn, DataEvent data) override
   {
-    {
-      std::scoped_lock lock(conn->sendMutex());
-      conn->sendQueue().push(std::move(data));
-    }
-    notifyWrite(conn);
+    std::scoped_lock lock(conn->sendMutex());
+    conn->sendQueue().push(std::move(data));
+  }
+
+  DrainResult drainSendQueue(ConnectionPtr conn, std::function<DrainResult(ConnectionPtr)> drainFunc) override
+  {
+    std::scoped_lock sendLock(conn->sendMutex());
+    return drainFunc(conn);
   }
 
   // --- Thread pool interface ---
-
-  sock_t getNotifyFd() const override
-  {
-    return _eventFd;
-  }
-
-  std::vector<sock_t> drainPendingWrites() override
-  {
-    std::scoped_lock lock(_pendingWritesMutex);
-    std::vector<sock_t> result(_pendingWrites.begin(), _pendingWrites.end());
-    _pendingWrites.clear();
-    return result;
-  }
 
   void postRecv(MoveOnlyFunction<void()> task) override
   {
@@ -159,16 +134,6 @@ private:
     }
   }
 
-  void notifyWrite(ConnectionPtr conn)
-  {
-    {
-      std::scoped_lock lock(_pendingWritesMutex);
-      _pendingWrites.insert(conn->getId());
-    }
-    uint64_t val = 1;
-    ::write(_eventFd, &val, sizeof(val));
-  }
-
   // Thread pool
   std::vector<std::thread> _workers;
   bool _stop;
@@ -177,11 +142,6 @@ private:
   std::queue<MoveOnlyFunction<void()>> _taskQueue;
   std::mutex _taskMutex;
   std::condition_variable _taskCv;
-
-  // Notification
-  sock_t _eventFd;
-  std::unordered_set<sock_t> _pendingWrites;
-  std::mutex _pendingWritesMutex;
 };
 
 } // namespace Netpp
