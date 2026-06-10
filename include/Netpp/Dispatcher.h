@@ -45,15 +45,9 @@ public:
 
   virtual void send(ConnectionPtr conn, DataEvent data) = 0;
 
-  virtual void postRecv(MoveOnlyFunction<void()> task)
-  {
-    task();
-  }
+  virtual void postRecv(MoveOnlyFunction<void()> task) = 0;
 
-  virtual void postForConnection(ConnectionPtr, MoveOnlyFunction<void()> task)
-  {
-    task();
-  }
+  virtual void postForConnection(ConnectionPtr, MoveOnlyFunction<void()> task) = 0;
 
   virtual DrainResult drainSendQueue(ConnectionPtr conn, std::function<DrainResult(ConnectionPtr)> drainFunc) = 0;
 

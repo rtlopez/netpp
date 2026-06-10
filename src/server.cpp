@@ -146,7 +146,7 @@ int main(int argc, const char **argv)
   router.on("GET", "/big", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
     std::ostringstream ss;
     ss << "<html>\n<head><title>Big Response</title></head>\n<body><h1>Big Response</h1><p>\n";
-    for (int i = 1; i <= 100000; i++)
+    for (int i = 1; i <= 50000; i++)
     {
       ss << " 0x" << std::hex << i << " " << std::dec << i << " ";
       if (i % 12 == 0)

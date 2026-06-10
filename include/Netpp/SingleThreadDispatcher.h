@@ -17,6 +17,16 @@ public:
     conn->sendQueue().push(std::move(data));
   }
 
+  void postRecv(MoveOnlyFunction<void()> task) override
+  {
+    task();
+  }
+
+  void postForConnection(ConnectionPtr, MoveOnlyFunction<void()> task) override
+  {
+    task();
+  }
+
   DrainResult drainSendQueue(ConnectionPtr conn, std::function<DrainResult(ConnectionPtr)> drainFunc) override
   {
     return drainFunc(conn);
