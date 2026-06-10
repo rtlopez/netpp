@@ -143,7 +143,7 @@ public:
     write(entry.getChannel());
     write(entry.getLocation());
     write(entry.str());
-    std::cout << std::endl;
+    std::cout << "\n";
   }
 
 private:

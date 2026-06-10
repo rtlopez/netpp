@@ -55,7 +55,6 @@ public:
   {
     logger(TCPSERVER, LogLevel::DEBUG).log(s);
     close(s);
-    // deferredClose(s);
   }
 
   void handleReading(sock_t s) override
@@ -76,8 +75,12 @@ public:
       _connections.emplace(as, conn);
       _loop->add(as, this);
       DataEvent data{.buffer = DataEvent::Buffer(), .connect = true};
-      _dispatcher->postForConnection(
-          conn, [conn, data = std::move(data)]() mutable { conn->getProtocol()->onReceive(conn, std::move(data)); });
+      ConnectionWeakPtr weak{conn};
+      _dispatcher->postForConnection(conn, [weak, data = std::move(data)]() mutable {
+        if (auto conn = weak.lock()) {
+          conn->getProtocol()->onReceive(conn, std::move(data));
+        }
+      });
       return;
     }
 
@@ -95,15 +98,18 @@ public:
       if (len > 0)
       {
         data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
-        _dispatcher->postForConnection(
-            conn, [conn, data = std::move(data)]() mutable { conn->getProtocol()->onReceive(conn, std::move(data)); });
+        ConnectionWeakPtr weak{conn};
+        _dispatcher->postForConnection(conn, [weak, data = std::move(data)]() mutable {
+          if (auto conn = weak.lock()) {
+            conn->getProtocol()->onReceive(conn, std::move(data));
+          }
+        });
       }
       else if (len == 0)
       {
         logger(TCPSERVER, LogLevel::ERROR).log(s, "closed by peer");
         conn->setClosed(true);
-        handleError(s);
-        // close(s);
+        close(s);
       }
       else if (err == EAGAIN || err == EWOULDBLOCK)
       {
@@ -113,13 +119,27 @@ public:
       {
         logger(TCPSERVER, LogLevel::ERROR).log("recv::error", s, len, err, ::strerror(err));
         conn->setClosed(true);
-        handleError(s);
-        //close(s);
+        close(s);
       }
       return;
     }
 
     logger(TCPSERVER, LogLevel::WARN).log("unknown", s);
+  }
+
+  std::vector<ConnectionWeakPtr> getProtocolConnections(Protocol *protocol) const
+  {
+    // TODO: lock for other threads access
+    std::vector<ConnectionWeakPtr> connections;
+    connections.reserve(_connections.size());
+    for (const auto &pair : _connections)
+    {
+      if (pair.second->getProtocol() == protocol && !pair.second->isClosed())
+      {
+        connections.emplace_back(pair.second);
+      }
+    }
+    return connections;
   }
 
   void handleWriting(sock_t s) override
@@ -129,31 +149,26 @@ public:
     auto it = _connections.find(s);
     if (it != _connections.end())
     {
-
       auto conn = it->second;
       DrainResult result =
           _dispatcher->drainSendQueue(conn, [this](ConnectionPtr conn) { return drainSendQueue(conn); });
 
       logger(TCPSERVER, LogLevel::DEBUG).log(s, to_string(result));
-      switch (result)
-      {
-      case DrainResult::Done:
-        _loop->add(s, this, false); // all sent, stop watching writes
-        break;
-      case DrainResult::Close:
-        close(s);
-        break;
-      case DrainResult::Partial:
-        break;
-      }
 
-      if (result != DrainResult::Close && conn->hasGenerator())
+      if (result == DrainResult::Close)
+      {
+        close(s);
+      }
+      else if (conn->hasGenerator())
       {
         logger(TCPSERVER, LogLevel::DEBUG).log(s, "gen:cont");
-        _dispatcher->postRecv([this, conn] {
-          if (!conn->isClosed() && conn->hasGenerator())
-          {
-            send(conn, conn->runGenerator());
+        ConnectionWeakPtr weak{conn};
+        _dispatcher->postRecv([this, weak] {
+          if (auto conn = weak.lock()) {
+            if (!conn->isClosed() && conn->hasGenerator())
+            {
+              send(conn, conn->runGenerator());
+            }
           }
         });
       }
@@ -161,20 +176,6 @@ public:
     }
 
     logger(TCPSERVER, LogLevel::WARN).log("unknown", s);
-  }
-
-  std::vector<ConnectionPtr> getProtocolConnections(Protocol *protocol) const
-  {
-    // TODO: lock for other threads access
-    std::vector<ConnectionPtr> connections;
-    for (const auto &pair : _connections)
-    {
-      if (pair.second->getProtocol() == protocol && !pair.second->isClosed())
-      {
-        connections.push_back(pair.second);
-      }
-    }
-    return connections;
   }
 
   DrainResult drainSendQueue(ConnectionPtr conn)
@@ -188,10 +189,6 @@ public:
 
     auto &queue = conn->sendQueue();
     logger(TCPSERVER, LogLevel::DEBUG).log(conn->getId(), queue.size());
-    if (queue.empty())
-    {
-      return DrainResult::Done;
-    }
     while (!queue.empty())
     {
       auto &data = queue.front();
@@ -221,6 +218,7 @@ public:
       queue.pop();
     }
 
+    _loop->add(conn->getId(), this, false);
     return DrainResult::Done;
   }
 
@@ -277,26 +275,6 @@ public:
   }
 
 private:
-  void deferredClose(sock_t s)
-  {
-    auto it = _connections.find(s);
-    if (it != _connections.end())
-    {
-      deferredClose(it->second);
-      return;
-    }
-
-    close(s);
-  }
-
-  void deferredClose(ConnectionPtr conn)
-  {
-    logger(TCPSERVER, LogLevel::ERROR).log(conn->getId());
-    conn->setClosed(true);
-    conn->clearGenerator();
-    _loop->notify(conn->getId());
-  }
-
   void close(sock_t s)
   {
     logger(TCPSERVER, LogLevel::DEBUG).log(s);

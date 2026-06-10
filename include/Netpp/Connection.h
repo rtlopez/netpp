@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -164,12 +165,15 @@ private:
   // Strand state (used by ThreadPoolDispatcher)
   std::queue<MoveOnlyFunction<void()>> _taskQueue;
   std::mutex _strandMutex;
-  bool _processing = false;
+  std::atomic<bool> _processing = false;
 
   // remote closed connection
-  volatile bool _closed = false;
+  std::atomic<bool> _closed = false;
 };
 
+static_assert(std::atomic<bool>::is_always_lock_free, "std::atomic<bool> must be lock-free");
+
 using ConnectionPtr = std::shared_ptr<Connection>;
+using ConnectionWeakPtr = std::weak_ptr<Connection>;
 
 } // namespace Netpp

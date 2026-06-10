@@ -48,9 +48,10 @@ public:
     }
 
     auto clients = _server->getProtocolConnections(this);
-    for (const ConnectionPtr &c : clients)
+    for (const ConnectionWeakPtr &w : clients)
     {
-      if (c != conn)
+      auto c = w.lock();
+      if (c && c != conn)
       {
         DataEvent resp{DataEvent::Buffer(str.begin(), str.end())};
         _server->send(c, std::move(resp));

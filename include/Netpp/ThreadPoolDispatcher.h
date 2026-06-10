@@ -23,7 +23,6 @@ public:
   ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop), _workers(numThreads), _stop(false)
   {
     logger(DISPATCH, LogLevel::DEBUG).log(numThreads);
-
     for (size_t i = 0; i < numThreads; i++)
     {
       _workers.emplace_back([this] { workerLoop(); });
@@ -89,15 +88,22 @@ public:
     }
     if (shouldSchedule)
     {
-      postRecv([this, conn] { drainConnectionTasks(conn); });
+      ConnectionWeakPtr weak{conn};
+      postRecv([this, weak] { drainConnectionTasks(weak); });
     }
   }
 
 private:
-  void drainConnectionTasks(ConnectionPtr conn)
+  void drainConnectionTasks(ConnectionWeakPtr weak)
   {
     while (true)
     {
+      auto conn = weak.lock();
+      if (!conn)
+      {
+        logger(DISPATCH, LogLevel::DEBUG).log("connection expired, dropping tasks");
+        return;
+      }
       MoveOnlyFunction<void()> task;
       {
         std::scoped_lock lock(conn->strandMutex());
