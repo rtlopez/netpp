@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -41,6 +42,39 @@ public:
     _loop->add(s, this);
   }
 
+  ConnectionWeakPtr connect(const char *host, uint16_t port, Protocol *protocol)
+  {
+    logger(TCPSERVER, LogLevel::DEBUG, "connect", host, port);
+    sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+    int ret = Socket::connect(s, host, port);
+
+    auto conn = std::make_shared<Connection>(s, protocol);
+    _connections.emplace(s, conn);
+
+    if (ret == 0)
+    {
+      // immediate connect (rare for non-blocking)
+      _loop->add(s, this);
+      DataEvent data{.buffer = DataEvent::Buffer(), .connect = true};
+      ConnectionWeakPtr weak{conn};
+      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+        if (auto conn = weak.lock())
+        {
+          conn->getProtocol()->onReceive(conn, std::move(data));
+        }
+      });
+    }
+    else
+    {
+      // EINPROGRESS - wait for writable event to confirm connection
+      _connecting.emplace(s);
+      _loop->add(s, this);
+      _loop->mod(s, true); // enable EPOLLOUT to detect connect completion
+    }
+
+    return conn;
+  }
+
   virtual ~TcpServer()
   {
     logger(TCPSERVER, LogLevel::DEBUG, _listeners.size());
@@ -54,6 +88,7 @@ public:
   void handleError(sock_t s) override
   {
     logger(TCPSERVER, LogLevel::DEBUG, s);
+    _connecting.erase(s);
     close(s);
   }
 
@@ -148,6 +183,42 @@ public:
   {
     logger(TCPSERVER, LogLevel::DEBUG, s, "begin");
 
+    // check if this is a connecting socket completing async connect
+    auto ci = _connecting.find(s);
+    if (ci != _connecting.end())
+    {
+      _connecting.erase(ci);
+
+      int so_error = 0;
+      socklen_t len = sizeof(so_error);
+      ::getsockopt(s, SOL_SOCKET, SO_ERROR, &so_error, &len);
+
+      if (so_error != 0)
+      {
+        logger(TCPSERVER, LogLevel::ERROR, "connect:failed", s, so_error, ::strerror(so_error));
+        close(s);
+        return;
+      }
+
+      logger(TCPSERVER, LogLevel::DEBUG, "connect:ok", s);
+      _loop->mod(s, false); // switch back to EPOLLIN only
+
+      auto it = _connections.find(s);
+      if (it != _connections.end())
+      {
+        auto conn = it->second;
+        DataEvent data{.buffer = DataEvent::Buffer(), .connect = true};
+        ConnectionWeakPtr weak{conn};
+        _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+          if (auto conn = weak.lock())
+          {
+            conn->getProtocol()->onReceive(conn, std::move(data));
+          }
+        });
+      }
+      return;
+    }
+
     auto it = _connections.find(s);
     if (it != _connections.end())
     {
@@ -217,6 +288,7 @@ private:
   void close(sock_t s)
   {
     logger(TCPSERVER, LogLevel::DEBUG, s);
+    _connecting.erase(s);
     _loop->del(s); // remove from epoll before closing the fd
     auto it = _connections.find(s);
     if (it != _connections.end())
@@ -229,6 +301,7 @@ private:
   Dispatcher *_dispatcher;
   std::unordered_map<sock_t, Protocol *> _listeners;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
+  std::unordered_set<sock_t> _connecting; // sockets with async connect in progress
 };
 
 } // namespace Netpp

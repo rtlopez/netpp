@@ -138,6 +138,28 @@ public:
     return afd;
   }
 
+  static int connect(sock_t fd, const char *host, uint16_t port)
+  {
+    sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+    std::memset(&addr, 0, addr_len);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = inet_addr(host);
+
+    int ret = ::connect(fd, (sockaddr *)&addr, addr_len);
+    int err = errno;
+
+    if (ret < 0 && err != EINPROGRESS)
+    {
+      logger(SOCKET, LogLevel::ERROR, fd, host, port, ret, err, ::strerror(err));
+      throw SocketException(err, "connect() failed");
+    }
+
+    logger(SOCKET, LogLevel::TRACE, fd, host, port, ret);
+    return ret;
+  }
+
   static int close(sock_t fd)
   {
     ::shutdown(fd, SHUT_WR);
