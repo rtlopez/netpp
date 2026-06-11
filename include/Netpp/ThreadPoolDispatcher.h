@@ -92,7 +92,10 @@ public:
   DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent &)> sendFunc) override
   {
     auto &queue = conn->sendQueue();
-    logger(TDISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
+    {
+      std::scoped_lock sendLock(conn->sendMutex());
+      logger(TDISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
+    }
     while (true)
     {
       DataEvent data;
@@ -100,6 +103,7 @@ public:
         std::scoped_lock sendLock(conn->sendMutex());
         if (queue.empty())
         {
+          _loop->mod(conn->getId(), false); // not more data to drain, notify loop to stop waiting for writable event
           break;
         }
         data = std::move(queue.front());
@@ -124,8 +128,6 @@ public:
         return DrainResult::Close; // chunk with close flag
       }
     }
-
-    _loop->mod(conn->getId(), false); // not more data to drain, notify loop to stop waiting for writable event
     return DrainResult::Done;
   }
 
