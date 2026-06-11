@@ -36,7 +36,7 @@ jobs:
       - name: Configure and Build
         uses: threeal/cmake-action@v2.1.0
         with:
-          options: -D CMAKE_BUILD_TYPE=${{ matrix.target }}
+          options: -D CMAKE_BUILD_TYPE:STRING=${{ matrix.target }}
           generator: Ninja
           cxx-compiler: ${{ matrix.compiler.cxx }}
           c-compiler: ${{ matrix.compiler.cc }}
