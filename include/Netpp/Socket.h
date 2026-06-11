@@ -55,10 +55,10 @@ public:
     {
       throw SocketException(errno, "setsockopt(SO_REUSEADDR) failed");
     }
-    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) < 0)
-    {
-      throw SocketException(errno, "setsockopt(SO_REUSEPORT) failed");
-    }
+    // if (::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) < 0)
+    // {
+    //   throw SocketException(errno, "setsockopt(SO_REUSEPORT) failed");
+    // }
 
     sockaddr_in addr;
     socklen_t addr_len = sizeof(addr);

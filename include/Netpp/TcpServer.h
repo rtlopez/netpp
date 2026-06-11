@@ -109,7 +109,7 @@ public:
       }
       else if (len == 0)
       {
-        logger(TCPSERVER, LogLevel::ERROR, s, "closed by peer");
+        logger(TCPSERVER, LogLevel::WARN, s, "closed by peer");
         conn->setClosed(true);
         close(s);
       }

@@ -6,3 +6,4 @@ build/
 *.o
 /client
 /server
+core.*
