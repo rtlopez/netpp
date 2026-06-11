@@ -1,10 +1,16 @@
 #pragma once
 
 #include "Dispatcher.h"
+#include "Logger/Logger.h"
 
 namespace Netpp
 {
 
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
+static const char *SDISPATCH = "dispatch";
+
+// single-threaded, immediate execution, no thread pool, for testing and simple use cases
 class SingleThreadDispatcher : public Dispatcher
 {
 public:
@@ -14,22 +20,66 @@ public:
 
   void send(ConnectionPtr conn, DataEvent data) override
   {
-    conn->sendQueue().push(std::move(data));
+    conn->sendQueue().push_back(std::move(data));
+    _loop->mod(conn->getId(), true); // notify loop that it has to drain send queue
   }
 
-  void postRecv(MoveOnlyFunction<void()> task) override
+  void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator) override
   {
+    conn->setGenerator(std::move(generator));
+    send(conn, conn->runGenerator());
+  }
+
+  void runGenerator(ConnectionPtr conn) override
+  {
+    if (conn->hasGenerator())
+    {
+      logger(SDISPATCH, LogLevel::DEBUG).log(conn->getId(), "gen:cont");
+      send(conn, conn->runGenerator());
+    }
+  }
+
+  void post(MoveOnlyFunction<void()> task) override
+  {
+    logger(SDISPATCH, LogLevel::TRACE).log("fn");
     task();
   }
 
-  void postForConnection(ConnectionPtr, MoveOnlyFunction<void()> task) override
+  void post(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
   {
+    logger(SDISPATCH, LogLevel::TRACE).log(conn->getId(), "con");
     task();
   }
 
-  DrainResult drainSendQueue(ConnectionPtr conn, std::function<DrainResult(ConnectionPtr)> drainFunc) override
+  DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent &)> sendFunc) override
   {
-    return drainFunc(conn);
+    auto &queue = conn->sendQueue();
+    logger(SDISPATCH, LogLevel::DEBUG).log(conn->getId(), queue.size());
+    while (!queue.empty())
+    {
+      auto &data = queue.front();
+
+      // drain if needed
+      if (data.sent < data.buffer.size())
+      {
+        if (!sendFunc(conn, data))
+        {
+          // not all chunk data were sent, we need to reply drain, push back to queue front
+          return DrainResult::Partial; // EAGAIN, wait for next handleWriting
+        }
+      }
+
+      if (data.close)
+      {
+        // no need to pop as connection destructor will do it
+        return DrainResult::Close; // chunk with close flag
+      }
+
+      queue.pop_front();
+    }
+
+    _loop->mod(conn->getId(), false);
+    return DrainResult::Done;
   }
 };
 

@@ -43,13 +43,23 @@ public:
 
   virtual ~Dispatcher() = default;
 
+  // post task to connection queue then to worker queue, ensures task is executed in connection strand
+  virtual void post(ConnectionPtr, MoveOnlyFunction<void()> task) = 0;
+
+  // post task to worker queue
+  virtual void post(MoveOnlyFunction<void()> task) = 0;
+
+  // schedule send of data to connection from worker
   virtual void send(ConnectionPtr conn, DataEvent data) = 0;
 
-  virtual void postRecv(MoveOnlyFunction<void()> task) = 0;
+  // schedule send of data to connection from generator
+  virtual void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator) = 0;
 
-  virtual void postForConnection(ConnectionPtr, MoveOnlyFunction<void()> task) = 0;
+  // drain connection send queue
+  virtual DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent&)> sendFunc) = 0;
 
-  virtual DrainResult drainSendQueue(ConnectionPtr conn, std::function<DrainResult(ConnectionPtr)> drainFunc) = 0;
+  // run generator to produce and send next chunk of data
+  virtual void runGenerator(ConnectionPtr conn) = 0;
 
 protected:
   EventLoop *_loop;

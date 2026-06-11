@@ -73,26 +73,27 @@ public:
   // Generator: produces DataEvents for streaming sends
   void setGenerator(MoveOnlyFunction<DataEvent(void)> gen)
   {
-    std::scoped_lock lock(_generatorMutex);
     _generator = std::move(gen);
   }
 
   bool hasGenerator()
   {
-    std::scoped_lock lock(_generatorMutex);
     return static_cast<bool>(_generator);
   }
 
   DataEvent runGenerator()
   {
-    std::scoped_lock lock(_generatorMutex);
     return _generator();
   }
 
   void clearGenerator()
   {
-    std::scoped_lock lock(_generatorMutex);
     _generator = {};
+  }
+
+  std::mutex &generatorMutex()
+  {
+    return _generatorMutex;
   }
 
   bool operator==(const Connection &other) const
@@ -111,7 +112,7 @@ public:
     return _sendMutex;
   }
 
-  std::queue<DataEvent> &sendQueue()
+  std::deque<DataEvent> &sendQueue()
   {
     return _sendQueue;
   }
@@ -155,7 +156,7 @@ private:
   std::shared_ptr<void> _context;
 
   // Send queue state
-  std::queue<DataEvent> _sendQueue;
+  std::deque<DataEvent> _sendQueue;
   std::mutex _sendMutex;
 
   // Generator state

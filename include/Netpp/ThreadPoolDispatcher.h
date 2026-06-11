@@ -1,28 +1,29 @@
 #pragma once
 
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <thread>
 #include <vector>
 
 #include "Dispatcher.h"
-#include "MoveOnlyFunction.h"
-#include "Netpp/Logger/Logger.h"
+#include "Logger/Logger.h"
 
 namespace Netpp
 {
 
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
-static const char *DISPATCH = "dispatch";
+static const char *TDISPATCH = "dispatch";
 
+// schedule received data processing to thread pool and drain send queue in main thread
 class ThreadPoolDispatcher : public Dispatcher
 {
 public:
   ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop), _workers(numThreads), _stop(false)
   {
-    logger(DISPATCH, LogLevel::DEBUG).log(numThreads);
+    logger(TDISPATCH, LogLevel::DEBUG).log(numThreads);
     for (size_t i = 0; i < numThreads; i++)
     {
       _workers.emplace_back([this] { workerLoop(); });
@@ -31,7 +32,7 @@ public:
 
   virtual ~ThreadPoolDispatcher()
   {
-    logger(DISPATCH, LogLevel::DEBUG).log("");
+    logger(TDISPATCH, LogLevel::DEBUG).log("");
     {
       std::scoped_lock lock(_taskMutex);
       _stop = true;
@@ -52,20 +53,87 @@ public:
   void send(ConnectionPtr conn, DataEvent data) override
   {
     std::scoped_lock lock(conn->sendMutex());
-    conn->sendQueue().push(std::move(data));
+    conn->sendQueue().push_back(std::move(data));
+    _loop->mod(conn->getId(), true); // notify loop that it has to drain send queue
   }
 
-  DrainResult drainSendQueue(ConnectionPtr conn, std::function<DrainResult(ConnectionPtr)> drainFunc) override
+  void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator) override
   {
-    std::scoped_lock sendLock(conn->sendMutex());
-    return drainFunc(conn);
+    DataEvent data;
+    {
+      std::scoped_lock generatorLock(conn->generatorMutex());
+      conn->setGenerator(std::move(generator));
+      data = conn->runGenerator();
+    }
+    send(conn, std::move(data));
+  }
+
+  void runGenerator(ConnectionPtr conn) override
+  {
+    ConnectionWeakPtr weak{conn};
+    post([this, weak] {
+      if (auto conn = weak.lock())
+      {
+        DataEvent data;
+        {
+          std::scoped_lock generatorLock(conn->generatorMutex());
+          if (!conn->hasGenerator())
+          {
+            return;
+          }
+          logger(TDISPATCH, LogLevel::DEBUG).log(conn->getId(), "gen:cont");
+          data = conn->runGenerator();
+        }
+        send(conn, std::move(data));
+      }
+    });
+  }
+
+  DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent &)> sendFunc) override
+  {
+    auto &queue = conn->sendQueue();
+    logger(TDISPATCH, LogLevel::DEBUG).log(conn->getId(), queue.size());
+    while (true)
+    {
+      DataEvent data;
+      {
+        std::scoped_lock sendLock(conn->sendMutex());
+        if (queue.empty())
+        {
+          break;
+        }
+        data = std::move(queue.front());
+        queue.pop_front();
+      }
+
+      // drain if needed
+      if (data.sent < data.buffer.size())
+      {
+        if (!sendFunc(conn, data))
+        {
+          std::scoped_lock sendLock(conn->sendMutex());
+          // not all chunk data were sent, we need to reply drain, push back to queue front
+          queue.push_front(std::move(data));
+
+          return DrainResult::Partial; // EAGAIN, wait for next handleWriting
+        }
+      }
+
+      if (data.close)
+      {
+        return DrainResult::Close; // chunk with close flag
+      }
+    }
+
+    _loop->mod(conn->getId(), false); // not more data to drain, notify loop to stop waiting for writable event
+    return DrainResult::Done;
   }
 
   // --- Thread pool interface ---
 
-  void postRecv(MoveOnlyFunction<void()> task) override
+  void post(MoveOnlyFunction<void()> task) override
   {
-    logger(DISPATCH, LogLevel::TRACE).log("");
+    logger(TDISPATCH, LogLevel::TRACE).log("");
     {
       std::scoped_lock lock(_taskMutex);
       _taskQueue.push(std::move(task));
@@ -73,9 +141,9 @@ public:
     _taskCv.notify_one();
   }
 
-  void postForConnection(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
+  void post(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
   {
-    logger(DISPATCH, LogLevel::TRACE).log(conn->getId());
+    logger(TDISPATCH, LogLevel::TRACE).log(conn->getId());
     bool shouldSchedule = false;
     {
       std::scoped_lock lock(conn->strandMutex());
@@ -89,7 +157,7 @@ public:
     if (shouldSchedule)
     {
       ConnectionWeakPtr weak{conn};
-      postRecv([this, weak] { drainConnectionTasks(weak); });
+      post([this, weak] { drainConnectionTasks(weak); });
     }
   }
 
@@ -101,7 +169,7 @@ private:
       auto conn = weak.lock();
       if (!conn)
       {
-        logger(DISPATCH, LogLevel::DEBUG).log("connection expired, dropping tasks");
+        logger(TDISPATCH, LogLevel::DEBUG).log("connection expired, dropping tasks");
         return;
       }
       MoveOnlyFunction<void()> task;
@@ -135,7 +203,7 @@ private:
         task = std::move(_taskQueue.front());
         _taskQueue.pop();
       }
-      logger(DISPATCH, LogLevel::TRACE).log("");
+      logger(TDISPATCH, LogLevel::TRACE).log("");
       task();
     }
   }

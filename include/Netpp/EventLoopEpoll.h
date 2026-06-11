@@ -45,7 +45,7 @@ public:
     }
   }
 
-  void add(sock_t fd, EventLoopHandler *handler, bool write = false) override
+  void add(sock_t fd, EventLoopHandler *handler) override
   {
     if (_fd < 0)
     {
@@ -53,12 +53,8 @@ public:
     }
 
     uint32_t events = EPOLLIN | EPOLLPRI;
-    if (write)
-    {
-      events |= EPOLLOUT;
-    }
 
-    logger(EPOLL, LogLevel::TRACE).log(fd, events, write ? "write" : "read");
+    logger(EPOLL, LogLevel::TRACE).log(fd, events, "read");
 
     epoll_event event = {events, {.fd = fd}};
 
@@ -83,16 +79,20 @@ public:
     }
   }
 
-  void notify(sock_t fd) override
+  void mod(sock_t fd, bool write = false) override
   {
     if (_fd < 0)
     {
       throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
 
-    epoll_event event = {EPOLLIN | EPOLLPRI | EPOLLOUT, {.fd = fd}};
+    epoll_event event = {EPOLLIN | EPOLLPRI, {.fd = fd}};
+    if (write)
+    {
+      event.events |= EPOLLOUT;
+    }
 
-    logger(EPOLL, LogLevel::TRACE).log(fd, event.events);
+    logger(EPOLL, LogLevel::TRACE).log(fd, event.events, write ? "write" : "read");
 
     if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
     {

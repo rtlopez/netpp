@@ -68,7 +68,7 @@ public:
       sock_t as = Socket::accept(s, addr);
       if (as <= 0)
       {
-        logger(TCPSERVER, LogLevel::ERROR).log("accept::error", s, as, errno, ::strerror(errno));
+        logger(TCPSERVER, LogLevel::ERROR).log("accept:error", s, as, errno, ::strerror(errno));
         return;
       }
       auto conn = std::make_shared<Connection>(as, protocol);
@@ -76,8 +76,9 @@ public:
       _loop->add(as, this);
       DataEvent data{.buffer = DataEvent::Buffer(), .connect = true};
       ConnectionWeakPtr weak{conn};
-      _dispatcher->postForConnection(conn, [weak, data = std::move(data)]() mutable {
-        if (auto conn = weak.lock()) {
+      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+        if (auto conn = weak.lock())
+        {
           conn->getProtocol()->onReceive(conn, std::move(data));
         }
       });
@@ -99,8 +100,9 @@ public:
       {
         data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
         ConnectionWeakPtr weak{conn};
-        _dispatcher->postForConnection(conn, [weak, data = std::move(data)]() mutable {
-          if (auto conn = weak.lock()) {
+        _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+          if (auto conn = weak.lock())
+          {
             conn->getProtocol()->onReceive(conn, std::move(data));
           }
         });
@@ -117,7 +119,7 @@ public:
       }
       else
       {
-        logger(TCPSERVER, LogLevel::ERROR).log("recv::error", s, len, err, ::strerror(err));
+        logger(TCPSERVER, LogLevel::ERROR).log("recv:error", s, len, err, ::strerror(err));
         conn->setClosed(true);
         close(s);
       }
@@ -144,85 +146,43 @@ public:
 
   void handleWriting(sock_t s) override
   {
-    logger(TCPSERVER, LogLevel::DEBUG).log(s);
+    logger(TCPSERVER, LogLevel::DEBUG).log(s, "begin");
 
     auto it = _connections.find(s);
     if (it != _connections.end())
     {
       auto conn = it->second;
       DrainResult result =
-          _dispatcher->drainSendQueue(conn, [this](ConnectionPtr conn) { return drainSendQueue(conn); });
+          _dispatcher->drain(conn, [this](ConnectionPtr conn, DataEvent &data) { return sendNow(conn, data); });
 
       logger(TCPSERVER, LogLevel::DEBUG).log(s, to_string(result));
 
       if (result == DrainResult::Close)
       {
         close(s);
+        return;
       }
-      else if (conn->hasGenerator())
-      {
-        logger(TCPSERVER, LogLevel::DEBUG).log(s, "gen:cont");
-        ConnectionWeakPtr weak{conn};
-        _dispatcher->postRecv([this, weak] {
-          if (auto conn = weak.lock()) {
-            if (!conn->isClosed() && conn->hasGenerator())
-            {
-              send(conn, conn->runGenerator());
-            }
-          }
-        });
-      }
+
+      _dispatcher->runGenerator(conn);
+
       return;
     }
 
     logger(TCPSERVER, LogLevel::WARN).log("unknown", s);
   }
 
-  DrainResult drainSendQueue(ConnectionPtr conn)
+  void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
   {
-    // connection is closed by remote
-    if (conn->isClosed())
-    {
-      // do not need to prune queue as connection destuctor will do it
-      return DrainResult::Close;
-    }
-
-    auto &queue = conn->sendQueue();
-    logger(TCPSERVER, LogLevel::DEBUG).log(conn->getId(), queue.size());
-    while (!queue.empty())
-    {
-      auto &data = queue.front();
-
-      // connection is closed by remote
-      if (conn->isClosed())
-      {
-        // do not need to prune queue as connection destuctor will do it
-        return DrainResult::Close;
-      }
-
-      // drain if needed
-      if (data.sent < data.buffer.size())
-      {
-        if (!drainSentData(conn, data))
-        {
-          // not all chunk data were sent, we need to reply drain, do not pop yet
-          return DrainResult::Partial; // EAGAIN, wait for next handleWriting
-        }
-      }
-
-      if (data.close)
-      {
-        return DrainResult::Close; // chunk with close flag
-      }
-
-      queue.pop();
-    }
-
-    _loop->add(conn->getId(), this, false);
-    return DrainResult::Done;
+    _dispatcher->send(conn, std::move(generator));
   }
 
-  bool drainSentData(ConnectionPtr conn, DataEvent &data)
+  void send(ConnectionPtr conn, DataEvent data)
+  {
+    _dispatcher->send(conn, std::move(data));
+  }
+
+private:
+  bool sendNow(ConnectionPtr conn, DataEvent &data)
   {
     if (data.buffer.empty())
     {
@@ -254,27 +214,6 @@ public:
     return true;
   }
 
-  void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
-  {
-    if (conn->isClosed())
-    {
-      return;
-    }
-    conn->setGenerator(std::move(generator));
-    send(conn, conn->runGenerator());
-  }
-
-  void send(ConnectionPtr conn, DataEvent data)
-  {
-    if (conn->isClosed())
-    {
-      return;
-    }
-    _dispatcher->send(conn, std::move(data));
-    _loop->notify(conn->getId()); // make sure we're watching writable events for this connection
-  }
-
-private:
   void close(sock_t s)
   {
     logger(TCPSERVER, LogLevel::DEBUG).log(s);
