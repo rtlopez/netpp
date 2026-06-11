@@ -36,11 +36,12 @@ jobs:
       - name: Configure and Build
         uses: threeal/cmake-action@v2.1.0
         with:
+          options: -D CMAKE_BUILD_TYPE=${{ matrix.target }}
           generator: Ninja
           cxx-compiler: ${{ matrix.compiler.cxx }}
           c-compiler: ${{ matrix.compiler.cc }}
           build-dir: ${{ env.build_dir }}
-          verbose: true
+          build-args: "-v"
 
       # - name: Generate Project
       #   run: cmake -S . -D CMAKE_BUILD_TYPE=${{ matrix.target }} -D CMAKE_C_COMPILER=${{ matrix.compiler.cc }} -D CMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }} -B ${{ env.build_dir }}
