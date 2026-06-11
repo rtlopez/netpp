@@ -21,9 +21,10 @@ static const char *TDISPATCH = "dispatch";
 class ThreadPoolDispatcher : public Dispatcher
 {
 public:
-  ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop), _workers(numThreads), _stop(false)
+  ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop), _stop(false)
   {
     logger(TDISPATCH, LogLevel::DEBUG, numThreads);
+    _workers.reserve(numThreads);
     for (size_t i = 0; i < numThreads; i++)
     {
       _workers.emplace_back([this] { workerLoop(); });
@@ -32,9 +33,18 @@ public:
 
   virtual ~ThreadPoolDispatcher()
   {
+    stop();
+  }
+
+  void stop() override
+  {
     logger(TDISPATCH, LogLevel::DEBUG, "");
     {
       std::scoped_lock lock(_taskMutex);
+      if (_stop)
+      {
+        return; // already stopped
+      }
       _stop = true;
     }
     _taskCv.notify_all();

@@ -19,7 +19,7 @@ enum DrainResult
   Close
 };
 
-inline const char* to_string(DrainResult r)
+inline const char *to_string(DrainResult r)
 {
   switch (r)
   {
@@ -43,6 +43,11 @@ public:
 
   virtual ~Dispatcher() = default;
 
+  // join worker threads; must be called while the objects tasks reference are still alive
+  virtual void stop()
+  {
+  }
+
   // post task to connection queue then to worker queue, ensures task is executed in connection strand
   virtual void post(ConnectionPtr, MoveOnlyFunction<void()> task) = 0;
 
@@ -56,7 +61,7 @@ public:
   virtual void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator) = 0;
 
   // drain connection send queue
-  virtual DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent&)> sendFunc) = 0;
+  virtual DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent &)> sendFunc) = 0;
 
   // run generator to produce and send next chunk of data
   virtual void runGenerator(ConnectionPtr conn) = 0;

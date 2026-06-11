@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <mutex>
 #include <sys/epoll.h>
 #include <vector>
@@ -47,10 +48,7 @@ public:
 
   void add(sock_t fd, EventLoopHandler *handler) override
   {
-    if (_fd < 0)
-    {
-      throw EventLoopException(-1, "EventLoopEpoll not initialized");
-    }
+    assert(_fd >= 0);
 
     uint32_t events = EPOLLIN | EPOLLPRI;
 
@@ -81,18 +79,16 @@ public:
 
   void mod(sock_t fd, bool write = false) override
   {
-    if (_fd < 0)
-    {
-      throw EventLoopException(-1, "EventLoopEpoll not initialized");
-    }
+    assert(_fd >= 0);
 
-    epoll_event event = {EPOLLIN | EPOLLPRI, {.fd = fd}};
+    uint32_t events = EPOLLIN | EPOLLPRI;
     if (write)
     {
-      event.events |= EPOLLOUT;
+      events |= EPOLLOUT;
     }
+    epoll_event event = {events, {.fd = fd}};
 
-    logger(EPOLL, LogLevel::TRACE, fd, event.events, write ? "write" : "read");
+    logger(EPOLL, LogLevel::TRACE, fd, events, write ? "write" : "read");
 
     if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
     {
@@ -103,10 +99,7 @@ public:
 
   void del(sock_t fd) override
   {
-    if (_fd < 0)
-    {
-      throw EventLoopException(-1, "EventLoopEpoll not initialized");
-    }
+    assert(_fd >= 0);
 
     logger(EPOLL, LogLevel::TRACE, fd);
 
@@ -116,7 +109,8 @@ public:
       // EBADF: fd already closed; ENOENT: fd was never registered — both are benign
       if (err != EBADF && err != ENOENT)
       {
-        throw EventLoopException(err, "epoll_ctl(EPOLL_CTL_DEL) failed");
+        // throw EventLoopException(err, "epoll_ctl(EPOLL_CTL_DEL) failed");
+        assert(false && "epoll_ctl(EPOLL_CTL_DEL) failed");
       }
       logger(EPOLL, LogLevel::WARN, "epoll_ctl(EPOLL_CTL_DEL) ignored", fd, err, ::strerror(err));
     }

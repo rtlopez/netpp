@@ -36,6 +36,7 @@ set(NETPP_LIBS
 # server example
 add_executable(server src/server.cpp)
 target_link_libraries(server PRIVATE ${NETPP_LIBS})
+target_link_options(server PRIVATE -rdynamic)
 
 # client example
 add_executable(client src/client.cpp)
