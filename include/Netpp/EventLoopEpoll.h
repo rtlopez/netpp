@@ -26,7 +26,7 @@ public:
     sock_t fd = ::epoll_create1(0);
     int err = errno;
 
-    logger(EPOLL, LogLevel::TRACE).log(fd);
+    logger(EPOLL, LogLevel::TRACE, fd);
 
     if (fd < 0)
     {
@@ -38,7 +38,7 @@ public:
 
   virtual ~EventLoopEpoll()
   {
-    logger(EPOLL, LogLevel::TRACE).log(_fd);
+    logger(EPOLL, LogLevel::TRACE, _fd);
     if (_fd >= 0)
     {
       ::close(_fd);
@@ -54,7 +54,7 @@ public:
 
     uint32_t events = EPOLLIN | EPOLLPRI;
 
-    logger(EPOLL, LogLevel::TRACE).log(fd, events, "read");
+    logger(EPOLL, LogLevel::TRACE, fd, events, "read");
 
     epoll_event event = {events, {.fd = fd}};
 
@@ -63,7 +63,7 @@ public:
       if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &event) < 0)
       {
         auto err = errno;
-        logger(EPOLL, LogLevel::ERROR).log(fd, events, err, ::strerror(err));
+        logger(EPOLL, LogLevel::ERROR, fd, events, err, ::strerror(err));
         throw EventLoopException(err, std::string("epoll_ctl(EPOLL_CTL_ADD) failed fd=") + std::to_string(fd));
       }
       addHandler(fd, handler);
@@ -73,7 +73,7 @@ public:
       if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
       {
         auto err = errno;
-        logger(EPOLL, LogLevel::ERROR).log(fd, events, err, ::strerror(err));
+        logger(EPOLL, LogLevel::ERROR, fd, events, err, ::strerror(err));
         throw EventLoopException(err, std::string("epoll_ctl(EPOLL_CTL_MOD) failed fd=") + std::to_string(fd));
       }
     }
@@ -92,12 +92,12 @@ public:
       event.events |= EPOLLOUT;
     }
 
-    logger(EPOLL, LogLevel::TRACE).log(fd, event.events, write ? "write" : "read");
+    logger(EPOLL, LogLevel::TRACE, fd, event.events, write ? "write" : "read");
 
     if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
     {
       int err = errno;
-      logger(EPOLL, LogLevel::WARN).log(fd, "ignore", err, ::strerror(err));
+      logger(EPOLL, LogLevel::WARN, fd, "ignore", err, ::strerror(err));
     }
   }
 
@@ -108,7 +108,7 @@ public:
       throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
 
-    logger(EPOLL, LogLevel::TRACE).log(fd);
+    logger(EPOLL, LogLevel::TRACE, fd);
 
     if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, nullptr) < 0)
     {
@@ -118,7 +118,7 @@ public:
       {
         throw EventLoopException(err, "epoll_ctl(EPOLL_CTL_DEL) failed");
       }
-      logger(EPOLL, LogLevel::WARN).log("epoll_ctl(EPOLL_CTL_DEL) ignored", fd, err, ::strerror(err));
+      logger(EPOLL, LogLevel::WARN, "epoll_ctl(EPOLL_CTL_DEL) ignored", fd, err, ::strerror(err));
     }
 
     removeHandler(fd);
@@ -137,7 +137,7 @@ public:
       if (ret == -1)
       {
         int err = errno;
-        logger(EPOLL, LogLevel::ERROR).log("err", ret, err);
+        logger(EPOLL, LogLevel::ERROR, "err", ret, err);
         if (err == EINTR)
         {
           continue; // interrupted, try again
@@ -148,7 +148,7 @@ public:
       if (ret == 0)
       {
         // `epoll_wait` reached its timeout
-        logger(EPOLL, LogLevel::TRACE).log("timeout");
+        logger(EPOLL, LogLevel::TRACE, "timeout");
         continue;
       }
 
@@ -162,7 +162,7 @@ public:
   void handle(const epoll_event &ev)
   {
     auto handler = getHandler(ev.data.fd);
-    logger(EPOLL, LogLevel::TRACE).log(ev.data.fd, ev.events, !!handler);
+    logger(EPOLL, LogLevel::TRACE, ev.data.fd, ev.events, !!handler);
     if (!handler)
     {
       return;

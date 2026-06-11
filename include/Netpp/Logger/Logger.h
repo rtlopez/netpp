@@ -52,8 +52,6 @@ inline std::string_view extractFunctionName(std::string_view name)
   return name;
 }
 
-class Logger;
-
 class LogEntry
 {
 public:
@@ -63,7 +61,13 @@ public:
   {
   }
 
-  ~LogEntry();
+  LogEntry(const LogEntry &) = delete;
+  LogEntry &operator=(const LogEntry &) = delete;
+
+  LogEntry(LogEntry &&) = default;
+  LogEntry &operator=(LogEntry &&) = default;
+
+  ~LogEntry() = default;
 
   template <typename T>
   void log(T value)
@@ -117,6 +121,116 @@ private:
   std::ostringstream _stream;
 };
 
+class LogFormatter
+{
+public:
+  virtual ~LogFormatter() = default;
+  virtual std::string format(const LogEntry &entry) = 0;
+};
+
+class LogWriter
+{
+public:
+  virtual ~LogWriter() = default;
+  virtual void write(std::string_view message) = 0;
+};
+
+class LogWriterConsole : public LogWriter
+{
+public:
+  LogWriterConsole()
+  {
+    // turn off io sync
+    std::ios_base::sync_with_stdio(false);
+    // untie cin from cout
+    std::cin.tie(nullptr);
+  }
+
+  void write(std::string_view message) override
+  {
+    // fastest exception-free block memory write to stdout
+    std::scoped_lock lock(_mutex);
+    std::cout.write(message.data(), message.size());
+    std::cout.flush();
+  }
+
+private:
+  std::mutex _mutex;
+};
+
+class LogFormatterSimple : public LogFormatter
+{
+public:
+  std::string format(const LogEntry &entry) override
+  {
+    std::ostringstream ss;
+    write(ss, entry);
+    return std::move(ss).str();
+  }
+
+  void write(std::ostringstream &ss, const LogEntry &entry)
+  {
+    write(ss, entry.getTimestamp());
+    write(ss, entry.getThreadId());
+    write(ss, entry.getLevel());
+    write(ss, entry.getChannel());
+    write(ss, entry.getLocation());
+    write(ss, entry.str());
+    ss << "\n";
+  }
+
+  void write(std::ostringstream &ss, std::chrono::system_clock::time_point timestamp)
+  {
+    auto time_t_now = std::chrono::system_clock::to_time_t(timestamp);
+    auto us = std::chrono::duration_cast<std::chrono::microseconds>(timestamp.time_since_epoch()) % 1000000;
+    std::tm tm_buf;
+    ::localtime_r(&time_t_now, &tm_buf);
+    ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S") << "." << std::setfill('0') << std::setw(6) << us.count();
+  }
+
+  void write(std::ostringstream &ss, LogLevel level)
+  {
+    ss << " " << logLevelToName(level);
+  }
+
+  void write(std::ostringstream &ss, std::source_location location)
+  {
+    ss << " " << extractFileName(location.file_name()) << ":" << location.line() << ":"
+       << extractFunctionName(location.function_name());
+  }
+
+  template <typename T>
+  void write(std::ostringstream &ss, const T &message)
+  {
+    ss << " " << message;
+  }
+};
+
+class LogHandler
+{
+public:
+  virtual ~LogHandler() = default;
+  virtual void handle(const LogEntry &entry) = 0;
+};
+
+class LogHandlerSimple : public LogHandler
+{
+public:
+  LogHandlerSimple(std::unique_ptr<LogFormatter> formatter, std::unique_ptr<LogWriter> writer)
+      : _formatter(std::move(formatter)), _writer(std::move(writer))
+  {
+  }
+
+  void handle(const LogEntry &entry) override
+  {
+    _writer->write(_formatter->format(entry));
+  }
+
+private:
+  std::unique_ptr<LogFormatter> _formatter;
+  std::unique_ptr<LogWriter> _writer;
+};
+
 class Logger
 {
 public:
@@ -125,62 +239,44 @@ public:
 
   static Logger *getInstance();
 
+  void write(const LogEntry &entry)
+  {
+    if (entry.getLevel() >= _level)
+    {
+      for (auto &handler : _handlers)
+      {
+        handler->handle(entry);
+      }
+    }
+  }
+
+  void addHandler(std::unique_ptr<LogHandler> handler)
+  {
+    _handlers.push_back(std::move(handler));
+  }
+
   void setLevel(LogLevel level)
   {
     _level = level;
   }
 
-  void write(const LogEntry &entry)
-  {
-    if (entry.getLevel() < _level)
-    {
-      return;
-    }
-    std::scoped_lock lock(_mutex);
-    write(entry.getTimestamp());
-    write(entry.getThreadId());
-    write(entry.getLevel());
-    write(entry.getChannel());
-    write(entry.getLocation());
-    write(entry.str());
-    std::cout << "\n";
-  }
-
 private:
-  void write(std::chrono::system_clock::time_point timestamp)
-  {
-    auto time_t_now = std::chrono::system_clock::to_time_t(timestamp);
-    auto us = std::chrono::duration_cast<std::chrono::microseconds>(timestamp.time_since_epoch()) % 1000000;
-    std::tm tm_buf;
-    ::localtime_r(&time_t_now, &tm_buf);
-    std::cout << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S") << "." << std::setfill('0') << std::setw(6) << us.count();
-  }
-
-  void write(LogLevel level)
-  {
-    std::cout << " " << logLevelToName(level);
-  }
-
-  void write(std::source_location location)
-  {
-    std::cout << " " << extractFileName(location.file_name()) << ":" << location.line() << ":"
-              << extractFunctionName(location.function_name());
-  }
-
-  template <typename T>
-  void write(const T &message)
-  {
-    std::cout << " " << message;
-  }
-
-  std::mutex _mutex;
   LogLevel _level = LogLevel::INFO;
+  std::vector<std::unique_ptr<LogHandler>> _handlers;
 };
 
 inline LogEntry logger(std::string_view channel, LogLevel level,
                        std::source_location loc = std::source_location::current())
 {
   return LogEntry{channel, level, loc, std::chrono::system_clock::now(), ::gettid()};
+}
+
+template <typename... Args>
+inline void logger(std::string_view channel, LogLevel level, Args... rest)
+{
+  auto entry = logger(channel, level);
+  entry.log(rest...);
+  Logger::getInstance()->write(std::move(entry));
 }
 
 } // namespace Netpp::Logger

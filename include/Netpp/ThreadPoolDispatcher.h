@@ -23,7 +23,7 @@ class ThreadPoolDispatcher : public Dispatcher
 public:
   ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop), _workers(numThreads), _stop(false)
   {
-    logger(TDISPATCH, LogLevel::DEBUG).log(numThreads);
+    logger(TDISPATCH, LogLevel::DEBUG, numThreads);
     for (size_t i = 0; i < numThreads; i++)
     {
       _workers.emplace_back([this] { workerLoop(); });
@@ -32,7 +32,7 @@ public:
 
   virtual ~ThreadPoolDispatcher()
   {
-    logger(TDISPATCH, LogLevel::DEBUG).log("");
+    logger(TDISPATCH, LogLevel::DEBUG, "");
     {
       std::scoped_lock lock(_taskMutex);
       _stop = true;
@@ -81,7 +81,7 @@ public:
           {
             return;
           }
-          logger(TDISPATCH, LogLevel::DEBUG).log(conn->getId(), "gen:cont");
+          logger(TDISPATCH, LogLevel::DEBUG, conn->getId(), "gen:cont");
           data = conn->runGenerator();
         }
         send(conn, std::move(data));
@@ -92,7 +92,7 @@ public:
   DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent &)> sendFunc) override
   {
     auto &queue = conn->sendQueue();
-    logger(TDISPATCH, LogLevel::DEBUG).log(conn->getId(), queue.size());
+    logger(TDISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
     while (true)
     {
       DataEvent data;
@@ -133,7 +133,7 @@ public:
 
   void post(MoveOnlyFunction<void()> task) override
   {
-    logger(TDISPATCH, LogLevel::TRACE).log("");
+    logger(TDISPATCH, LogLevel::TRACE, "");
     {
       std::scoped_lock lock(_taskMutex);
       _taskQueue.push(std::move(task));
@@ -143,7 +143,7 @@ public:
 
   void post(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
   {
-    logger(TDISPATCH, LogLevel::TRACE).log(conn->getId());
+    logger(TDISPATCH, LogLevel::TRACE, conn->getId());
     bool shouldSchedule = false;
     {
       std::scoped_lock lock(conn->strandMutex());
@@ -169,7 +169,7 @@ private:
       auto conn = weak.lock();
       if (!conn)
       {
-        logger(TDISPATCH, LogLevel::DEBUG).log("connection expired, dropping tasks");
+        logger(TDISPATCH, LogLevel::DEBUG, "connection expired, dropping tasks");
         return;
       }
       MoveOnlyFunction<void()> task;
@@ -203,7 +203,7 @@ private:
         task = std::move(_taskQueue.front());
         _taskQueue.pop();
       }
-      logger(TDISPATCH, LogLevel::TRACE).log("");
+      logger(TDISPATCH, LogLevel::TRACE, "");
       task();
     }
   }

@@ -67,7 +67,7 @@ public:
       }
     }
 
-    logger(CHAT, LogLevel::DEBUG).log(str);
+    logger(CHAT, LogLevel::DEBUG, str);
   }
 
 private:

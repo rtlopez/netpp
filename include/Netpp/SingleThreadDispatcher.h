@@ -34,27 +34,27 @@ public:
   {
     if (conn->hasGenerator())
     {
-      logger(SDISPATCH, LogLevel::DEBUG).log(conn->getId(), "gen:cont");
+      logger(SDISPATCH, LogLevel::DEBUG, conn->getId(), "gen:cont");
       send(conn, conn->runGenerator());
     }
   }
 
   void post(MoveOnlyFunction<void()> task) override
   {
-    logger(SDISPATCH, LogLevel::TRACE).log("fn");
+    logger(SDISPATCH, LogLevel::TRACE, "fn");
     task();
   }
 
   void post(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
   {
-    logger(SDISPATCH, LogLevel::TRACE).log(conn->getId(), "con");
+    logger(SDISPATCH, LogLevel::TRACE, conn->getId(), "con");
     task();
   }
 
   DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent &)> sendFunc) override
   {
     auto &queue = conn->sendQueue();
-    logger(SDISPATCH, LogLevel::DEBUG).log(conn->getId(), queue.size());
+    logger(SDISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
     while (!queue.empty())
     {
       auto &data = queue.front();

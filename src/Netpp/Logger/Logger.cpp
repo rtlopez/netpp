@@ -1,4 +1,5 @@
 #include <array>
+#include <cctype>
 
 #include "Netpp/Logger/Logger.h"
 
@@ -8,7 +9,7 @@ static Netpp::Logger::Logger instance;
 constexpr std::array<std::string_view, Netpp::Logger::FATAL + 1> logLevelNames = {"TRACE", "DEBUG", "INFO",
                                                                                   "WARN",  "ERROR", "FATAL"};
 
-constexpr bool iequals(std::string_view lhs, std::string_view rhs)
+constexpr bool logLevelEquals(std::string_view lhs, std::string_view rhs)
 {
   if (lhs.size() != rhs.size())
   {
@@ -17,9 +18,7 @@ constexpr bool iequals(std::string_view lhs, std::string_view rhs)
 
   for (size_t i = 0; i < lhs.size(); ++i)
   {
-    const char a = lhs[i] >= 'A' && lhs[i] <= 'Z' ? static_cast<char>(lhs[i] - 'A' + 'a') : lhs[i];
-    const char b = rhs[i] >= 'A' && rhs[i] <= 'Z' ? static_cast<char>(rhs[i] - 'A' + 'a') : rhs[i];
-    if (a != b)
+    if (std::toupper(lhs[i]) != std::toupper(rhs[i]))
     {
       return false;
     }
@@ -27,6 +26,7 @@ constexpr bool iequals(std::string_view lhs, std::string_view rhs)
 
   return true;
 }
+
 } // namespace
 
 namespace Netpp::Logger
@@ -46,18 +46,13 @@ std::optional<LogLevel> logLevelFromName(std::string_view name)
 {
   for (size_t i = 0; i < logLevelNames.size(); ++i)
   {
-    if (iequals(name, logLevelNames[i]))
+    if (logLevelEquals(name, logLevelNames[i]))
     {
       return static_cast<LogLevel>(i);
     }
   }
 
   return std::nullopt;
-}
-
-LogEntry::~LogEntry()
-{
-  Logger::getInstance()->write(*this);
 }
 
 Logger *Logger::getInstance()

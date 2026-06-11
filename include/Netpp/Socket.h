@@ -29,11 +29,11 @@ public:
     auto err = errno;
     if (fd < 0)
     {
-      logger(SOCKET, LogLevel::ERROR).log(domain, type, protocol, fd, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR, domain, type, protocol, fd, err, ::strerror(err));
       throw SocketException(err, "socket() failed");
     }
 
-    logger(SOCKET, LogLevel::TRACE).log(domain, type, protocol, fd);
+    logger(SOCKET, LogLevel::TRACE, domain, type, protocol, fd);
 
     return fd;
   }
@@ -72,11 +72,11 @@ public:
 
     if (ret < 0)
     {
-      logger(SOCKET, LogLevel::ERROR).log(fd, ret, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR, fd, ret, err, ::strerror(err));
       throw SocketException(err, "bind() failed");
     }
 
-    logger(SOCKET, LogLevel::TRACE).log(fd, ret);
+    logger(SOCKET, LogLevel::TRACE, fd, ret);
 
     return ret;
   }
@@ -88,11 +88,11 @@ public:
 
     if (ret < 0)
     {
-      logger(SOCKET, LogLevel::ERROR).log(fd, ret, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR, fd, ret, err, ::strerror(err));
       throw SocketException(err, "listen() failed");
     }
 
-    logger(SOCKET, LogLevel::TRACE).log(fd, ret);
+    logger(SOCKET, LogLevel::TRACE, fd, ret);
 
     return ret;
   }
@@ -107,7 +107,7 @@ public:
 
     if (afd < 0)
     {
-      logger(SOCKET, LogLevel::ERROR).log(afd, fd, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR, afd, fd, err, ::strerror(err));
       if (err == EAGAIN)
       {
         return 0;
@@ -119,11 +119,11 @@ public:
     err = errno;
     if (status < 0)
     {
-      logger(SOCKET, LogLevel::ERROR).log("fcntl(O_NONBLOCK) failed", afd, fd, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR, "fcntl(O_NONBLOCK) failed", afd, fd, err, ::strerror(err));
       throw SocketException(err, "fcntl(O_NONBLOCK) failed");
     }
 
-    logger(SOCKET, LogLevel::TRACE).log(afd, fd);
+    logger(SOCKET, LogLevel::TRACE, afd, fd);
 
     // struct linger sl;
     // sl.l_onoff = 0;  // disable linger
@@ -145,7 +145,7 @@ public:
     int err = errno;
     if (ret < 0)
     {
-      logger(SOCKET, LogLevel::ERROR).log("close() failed", fd, ret, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR, "close() failed", fd, ret, err, ::strerror(err));
       if (err == EBADF)
       {
         throw SocketException(err, "close() failed");
@@ -153,7 +153,7 @@ public:
     }
     else
     {
-      logger(SOCKET, LogLevel::TRACE).log(fd, ret);
+      logger(SOCKET, LogLevel::TRACE, fd, ret);
     }
     return 0;
   }

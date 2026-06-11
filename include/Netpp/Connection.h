@@ -25,7 +25,7 @@ class Connection
 public:
   Connection(sock_t s, Protocol *protocol = nullptr) : _s(s), _protocol(protocol)
   {
-    logger(CONNECTION, LogLevel::DEBUG).log(_s);
+    logger(CONNECTION, LogLevel::DEBUG, _s);
   }
 
   virtual ~Connection()
@@ -34,7 +34,7 @@ public:
     {
       _context.reset();
     }
-    logger(CONNECTION, LogLevel::DEBUG).log(_s);
+    logger(CONNECTION, LogLevel::DEBUG, _s);
     if (_s >= 0)
     {
       Socket::close(_s);

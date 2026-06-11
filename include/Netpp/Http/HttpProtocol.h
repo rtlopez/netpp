@@ -57,7 +57,7 @@ public:
 
     int s = conn->getId();
 
-    logger(HTTP, LogLevel::DEBUG).log(s, data.buffer.size());
+    logger(HTTP, LogLevel::DEBUG, s, data.buffer.size());
 
     HttpRequestPtr req = getRequest(conn);
     try
@@ -111,18 +111,18 @@ private:
     const auto headers_str = res.str();
 
     DataEvent hdr{DataEvent::Buffer(headers_str.begin(), headers_str.end())};
-    logger(HTTP, LogLevel::DEBUG).log("headers", hdr.buffer.size());
+    logger(HTTP, LogLevel::DEBUG, "headers", hdr.buffer.size());
     _server->send(conn, std::move(hdr));
 
     if (res.generator)
     {
-      logger(HTTP, LogLevel::DEBUG).log("generator");
+      logger(HTTP, LogLevel::DEBUG, "generator");
       _server->send(conn, std::move(res.generator));
     }
     else
     {
       DataEvent body{DataEvent::Buffer(res.body.begin(), res.body.end()), true};
-      logger(HTTP, LogLevel::DEBUG).log("body", body.buffer.size());
+      logger(HTTP, LogLevel::DEBUG, "body", body.buffer.size());
       _server->send(conn, std::move(body));
     }
   }

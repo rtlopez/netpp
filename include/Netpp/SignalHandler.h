@@ -42,13 +42,13 @@ public:
       throw EventLoopException(errno, "signalfd() failed");
     }
 
-    logger(SIGNAL, LogLevel::DEBUG).log(_fd);
+    logger(SIGNAL, LogLevel::DEBUG, _fd);
     _loop->add(_fd, this);
   }
 
   ~SignalHandler()
   {
-    logger(SIGNAL, LogLevel::DEBUG).log(_fd);
+    logger(SIGNAL, LogLevel::DEBUG, _fd);
     if (_fd >= 0)
     {
       _loop->del(_fd);
@@ -62,14 +62,14 @@ public:
     ssize_t len = ::read(s, &info, sizeof(info));
     if (len == sizeof(info))
     {
-      logger(SIGNAL, LogLevel::INFO).log("Caught signal", info.ssi_signo);
+      logger(SIGNAL, LogLevel::INFO, "Caught signal", info.ssi_signo);
       _loop->stop();
     }
   }
 
   void handleError(sock_t s) override
   {
-    logger(SIGNAL, LogLevel::ERROR).log("Error in signal handler", s);
+    logger(SIGNAL, LogLevel::ERROR, "Error in signal handler", s);
     _loop->stop();
   }
 

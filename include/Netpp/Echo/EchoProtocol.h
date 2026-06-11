@@ -43,7 +43,7 @@ public:
     {
       _server->send(conn, [counter = 0]() mutable -> DataEvent {
         counter++;
-        logger(ECHO, LogLevel::DEBUG).log(counter);
+        logger(ECHO, LogLevel::DEBUG, counter);
         std::string data = "echo " + std::to_string(counter) + "\n";
         return {.buffer = {data.begin(), data.end()}};
       });
@@ -58,7 +58,7 @@ public:
       }
     }
 
-    logger(ECHO, LogLevel::DEBUG).log(str);
+    logger(ECHO, LogLevel::DEBUG, str);
   }
 
 private:

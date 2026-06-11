@@ -33,7 +33,7 @@ public:
 
   void listen(const char *addr, uint16_t port, Protocol *protocol)
   {
-    logger(TCPSERVER, LogLevel::DEBUG).log(addr, port);
+    logger(TCPSERVER, LogLevel::DEBUG, addr, port);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     Socket::bind(s, addr, port);
     Socket::listen(s, 256);
@@ -43,7 +43,7 @@ public:
 
   virtual ~TcpServer()
   {
-    logger(TCPSERVER, LogLevel::DEBUG).log(_listeners.size());
+    logger(TCPSERVER, LogLevel::DEBUG, _listeners.size());
     for (auto &[s, protocol] : _listeners)
     {
       _loop->del(s);
@@ -53,7 +53,7 @@ public:
 
   void handleError(sock_t s) override
   {
-    logger(TCPSERVER, LogLevel::DEBUG).log(s);
+    logger(TCPSERVER, LogLevel::DEBUG, s);
     close(s);
   }
 
@@ -62,13 +62,13 @@ public:
     auto lsi = _listeners.find(s);
     if (lsi != _listeners.end())
     {
-      logger(TCPSERVER, LogLevel::DEBUG).log("accept", s);
+      logger(TCPSERVER, LogLevel::DEBUG, "accept", s);
       auto protocol = lsi->second;
       sockaddr_in addr;
       sock_t as = Socket::accept(s, addr);
       if (as <= 0)
       {
-        logger(TCPSERVER, LogLevel::ERROR).log("accept:error", s, as, errno, ::strerror(errno));
+        logger(TCPSERVER, LogLevel::ERROR, "accept:error", s, as, errno, ::strerror(errno));
         return;
       }
       auto conn = std::make_shared<Connection>(as, protocol);
@@ -94,7 +94,7 @@ public:
       auto len = Socket::recv(s, data.buffer.data(), data.buffer.size(), 0);
       auto err = errno;
 
-      logger(TCPSERVER, LogLevel::DEBUG).log("recv", s, len);
+      logger(TCPSERVER, LogLevel::DEBUG, "recv", s, len);
 
       if (len > 0)
       {
@@ -109,7 +109,7 @@ public:
       }
       else if (len == 0)
       {
-        logger(TCPSERVER, LogLevel::ERROR).log(s, "closed by peer");
+        logger(TCPSERVER, LogLevel::ERROR, s, "closed by peer");
         conn->setClosed(true);
         close(s);
       }
@@ -119,14 +119,14 @@ public:
       }
       else
       {
-        logger(TCPSERVER, LogLevel::ERROR).log("recv:error", s, len, err, ::strerror(err));
+        logger(TCPSERVER, LogLevel::ERROR, "recv:error", s, len, err, ::strerror(err));
         conn->setClosed(true);
         close(s);
       }
       return;
     }
 
-    logger(TCPSERVER, LogLevel::WARN).log("unknown", s);
+    logger(TCPSERVER, LogLevel::WARN, "unknown", s);
   }
 
   std::vector<ConnectionWeakPtr> getProtocolConnections(Protocol *protocol) const
@@ -146,7 +146,7 @@ public:
 
   void handleWriting(sock_t s) override
   {
-    logger(TCPSERVER, LogLevel::DEBUG).log(s, "begin");
+    logger(TCPSERVER, LogLevel::DEBUG, s, "begin");
 
     auto it = _connections.find(s);
     if (it != _connections.end())
@@ -155,7 +155,7 @@ public:
       DrainResult result =
           _dispatcher->drain(conn, [this](ConnectionPtr conn, DataEvent &data) { return sendNow(conn, data); });
 
-      logger(TCPSERVER, LogLevel::DEBUG).log(s, to_string(result));
+      logger(TCPSERVER, LogLevel::DEBUG, s, to_string(result));
 
       if (result == DrainResult::Close)
       {
@@ -168,7 +168,7 @@ public:
       return;
     }
 
-    logger(TCPSERVER, LogLevel::WARN).log("unknown", s);
+    logger(TCPSERVER, LogLevel::WARN, "unknown", s);
   }
 
   void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
@@ -193,7 +193,7 @@ private:
     {
       auto len = Socket::send(conn->getId(), data.buffer.data() + data.sent, data.buffer.size() - data.sent, 0);
       auto err = errno;
-      logger(TCPSERVER, LogLevel::DEBUG).log(conn->getId(), len, data.close);
+      logger(TCPSERVER, LogLevel::DEBUG, conn->getId(), len, data.close);
       if (len < 0)
       {
         if (err == EAGAIN || err == EWOULDBLOCK)
@@ -201,7 +201,7 @@ private:
           // unable to drain connection buffer, wait for next writable event
           return false;
         }
-        logger(TCPSERVER, LogLevel::ERROR).log(conn->getId(), len, err, ::strerror(err));
+        logger(TCPSERVER, LogLevel::ERROR, conn->getId(), len, err, ::strerror(err));
         data.close = true;              // mark for close
         data.sent = data.buffer.size(); // mark as "done" so close triggers
         return true;
@@ -216,7 +216,7 @@ private:
 
   void close(sock_t s)
   {
-    logger(TCPSERVER, LogLevel::DEBUG).log(s);
+    logger(TCPSERVER, LogLevel::DEBUG, s);
     _loop->del(s); // remove from epoll before closing the fd
     auto it = _connections.find(s);
     if (it != _connections.end())

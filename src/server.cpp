@@ -28,7 +28,7 @@ static const char *SERVER = "server";
 
 void sigpipe_handler(int signum)
 {
-  logger(SERVER, LogLevel::INFO).log("SIGPIPE caught", signum);
+  logger(SERVER, LogLevel::INFO, "SIGPIPE caught", signum);
 }
 
 struct CliArgs
@@ -101,9 +101,13 @@ int main(int argc, const char **argv)
 {
   CliArgs args{argc, argv};
 
+  auto logHandler = std::make_unique<Netpp::Logger::LogHandlerSimple>(
+      std::make_unique<Netpp::Logger::LogFormatterSimple>(), std::make_unique<Netpp::Logger::LogWriterConsole>());
+
+  Netpp::Logger::Logger::getInstance()->addHandler(std::move(logHandler));
   Netpp::Logger::Logger::getInstance()->setLevel(args.logLevel);
 
-  logger(SERVER, LogLevel::INFO).log("Starting server", "log-level:", Netpp::Logger::logLevelToName(args.logLevel));
+  logger(SERVER, LogLevel::INFO, "Starting server", "log-level:", Netpp::Logger::logLevelToName(args.logLevel));
 
   std::signal(SIGPIPE, sigpipe_handler);
 
@@ -134,7 +138,7 @@ int main(int argc, const char **argv)
   http.addMiddleware(
       [&router](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
         router.handle(req, res, conn);
-        logger(SERVER, LogLevel::INFO).log("HTTP", conn->getPeerName(), req.method, req.path, res.status);
+        logger(SERVER, LogLevel::INFO, "HTTP", conn->getPeerName(), req.method, req.path, res.status);
       });
 
   router.on("GET", "/", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
@@ -159,7 +163,7 @@ int main(int argc, const char **argv)
   });
 
   router.on("GET", "/stream", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
-    logger(SERVER, LogLevel::INFO).log("[HTTP]", "/stream");
+    logger(SERVER, LogLevel::INFO, "[HTTP]", "/stream");
     res.setGenerator([counter = 0]() mutable -> Netpp::DataEvent {
       counter++;
       std::string data = "line " + std::to_string(counter) + "\n";
@@ -193,7 +197,7 @@ int main(int argc, const char **argv)
 
   loop.run();
 
-  logger(SERVER, LogLevel::INFO).log("Server stopping");
+  logger(SERVER, LogLevel::INFO, "Server stopping");
 
   return 0;
 }

@@ -38,7 +38,7 @@ public:
 
   virtual ~HttpRequest()
   {
-    logger(HTTPR, LogLevel::DEBUG).log("");
+    logger(HTTPR, LogLevel::DEBUG, "");
   }
 
   void receive(const char *c, size_t len)
