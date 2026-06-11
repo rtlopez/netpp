@@ -194,11 +194,12 @@ public:
 
   EventLoopHandler *getHandler(sock_t fd)
   {
-    std::scoped_lock lock(_handlersMutex);
     if (fd < 0)
     {
       throw EventLoopException(-1, "invalid fd");
     }
+
+    std::scoped_lock lock(_handlersMutex);
     if (static_cast<size_t>(fd) >= _handlers.size())
     {
       return nullptr;
@@ -213,9 +214,9 @@ public:
       throw EventLoopException(-1, "invalid fd");
     }
 
+    std::scoped_lock lock(_handlersMutex);
     if (static_cast<size_t>(fd) >= _handlers.size())
     {
-      std::scoped_lock lock(_handlersMutex);
       _handlers.resize(static_cast<size_t>(fd) + 1024, nullptr);
     }
     _handlers[fd] = handler;
@@ -223,8 +224,13 @@ public:
 
   void removeHandler(sock_t fd)
   {
+    if (fd < 0)
+    {
+      return;
+    }
+
     std::scoped_lock lock(_handlersMutex);
-    if (fd < 0 || static_cast<size_t>(fd) >= _handlers.size())
+    if (static_cast<size_t>(fd) >= _handlers.size())
     {
       return;
     }

@@ -265,18 +265,19 @@ private:
   std::vector<std::unique_ptr<LogHandler>> _handlers;
 };
 
-inline LogEntry logger(std::string_view channel, LogLevel level,
-                       std::source_location loc = std::source_location::current())
+template <typename... Args>
+struct logger
 {
-  return LogEntry{channel, level, loc, std::chrono::system_clock::now(), ::gettid()};
-}
+  logger(std::string_view channel, LogLevel level, Args &&...args,
+         std::source_location loc = std::source_location::current())
+  {
+    auto entry = LogEntry{channel, level, loc, std::chrono::system_clock::now(), ::gettid()};
+    entry.log(std::forward<Args>(args)...);
+    Logger::getInstance()->write(std::move(entry));
+  }
+};
 
 template <typename... Args>
-inline void logger(std::string_view channel, LogLevel level, Args... rest)
-{
-  auto entry = logger(channel, level);
-  entry.log(rest...);
-  Logger::getInstance()->write(std::move(entry));
-}
+logger(std::string_view, LogLevel, Args &&...) -> logger<Args...>;
 
 } // namespace Netpp::Logger

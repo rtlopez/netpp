@@ -50,14 +50,13 @@ public:
 
   void onReceive(ConnectionPtr conn, DataEvent data) override
   {
+    auto s = conn->getId();
+    logger(HTTP, LogLevel::DEBUG, s, data.buffer.size());
+
     if (data.connect)
     {
       return;
     }
-
-    int s = conn->getId();
-
-    logger(HTTP, LogLevel::DEBUG, s, data.buffer.size());
 
     HttpRequestPtr req = getRequest(conn);
     try
@@ -110,20 +109,36 @@ private:
     }
     const auto headers_str = res.str();
 
-    DataEvent hdr{DataEvent::Buffer(headers_str.begin(), headers_str.end())};
-    logger(HTTP, LogLevel::DEBUG, "headers", hdr.buffer.size());
-    _server->send(conn, std::move(hdr));
-
     if (res.generator)
     {
+      DataEvent hdr{DataEvent::Buffer(headers_str.begin(), headers_str.end())};
+      logger(HTTP, LogLevel::DEBUG, "headers", hdr.buffer.size());
+      _server->send(conn, std::move(hdr));
+
       logger(HTTP, LogLevel::DEBUG, "generator");
       _server->send(conn, std::move(res.generator));
     }
     else
     {
-      DataEvent body{DataEvent::Buffer(res.body.begin(), res.body.end()), true};
-      logger(HTTP, LogLevel::DEBUG, "body", body.buffer.size());
-      _server->send(conn, std::move(body));
+      size_t totalSize = headers_str.size() + res.body.size();
+      if (totalSize <= 4096)
+      {
+        DataEvent data{DataEvent::Buffer(totalSize), true};
+        std::copy(headers_str.begin(), headers_str.end(), data.buffer.data());
+        std::copy(res.body.begin(), res.body.end(), data.buffer.data() + headers_str.size());
+        logger(HTTP, LogLevel::DEBUG, "headers+body", data.buffer.size());
+        _server->send(conn, std::move(data));
+      }
+      else
+      {
+        DataEvent hdr{DataEvent::Buffer(headers_str.begin(), headers_str.end())};
+        logger(HTTP, LogLevel::DEBUG, "headers", hdr.buffer.size());
+        _server->send(conn, std::move(hdr));
+
+        DataEvent body{DataEvent::Buffer(res.body.begin(), res.body.end()), true};
+        logger(HTTP, LogLevel::DEBUG, "body", body.buffer.size());
+        _server->send(conn, std::move(body));
+      }
     }
   }
 
