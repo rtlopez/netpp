@@ -1,9 +1,10 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.14)
 
 project(Netpp VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 add_compile_options(-Wall -Wextra)
@@ -22,9 +23,7 @@ find_package(Threads REQUIRED)
 
 add_subdirectory(src/Netpp)
 
-# server example
-add_executable(server src/server.cpp)
-target_link_libraries(server PRIVATE
+set(NETPP_LIBS
     lyra
     Threads::Threads
     netpp_core
@@ -34,11 +33,16 @@ target_link_libraries(server PRIVATE
     netpp_chat
 )
 
+# server example
+add_executable(server src/server.cpp)
+target_link_libraries(server PRIVATE ${NETPP_LIBS})
+
 # client example
 add_executable(client src/client.cpp)
+target_link_libraries(client PRIVATE ${NETPP_LIBS})
 
 ## unit tests
-## https://cliutils.gitlab.io/modern-cmake/chapters/testing.html
+## https://cliutils.gitlab.io/modern-cmake/testing/
 
 #if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     include(CTest)

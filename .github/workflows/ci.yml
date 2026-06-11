@@ -10,6 +10,9 @@ jobs:
     strategy:
       matrix:
         target: ['Debug', 'Release']
+        compiler:
+          - { cc: gcc, cxx: g++ }
+          - { cc: clang, cxx: clang++ }
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -23,17 +26,30 @@ jobs:
           echo "build_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
           echo "build_tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
           echo "build_sha=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_ENV
+          echo "build_config=${{ matrix.target }}-${{ matrix.compiler.cc }}" >> $GITHUB_ENV
+          echo "build_dir=build/${{ matrix.target }}-${{ matrix.compiler.cc }}" >> $GITHUB_ENV
 
       - name: Generate Project
-        run: cmake -S . -D CMAKE_BUILD_TYPE=${{ matrix.target }} -B ./build/${{ matrix.target }}
+        run: cmake -S . -D CMAKE_BUILD_TYPE=${{ matrix.target }} -D CMAKE_C_COMPILER=${{ matrix.compiler.cc }} -D CMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }} -B ${{ env.build_dir }}
 
       - name: Build Project
-        run: cmake --build ./build/${{ matrix.target }}
+        run: cmake --build ${{ env.build_dir }} -v
 
       - name: Create Artifact
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: ${{ matrix.target }}-${{ env.build_sha }}
+          name: ${{ env.build_config }}-${{ env.build_sha }}
           path: |
-            ./build/${{ matrix.target }}/server
-            ./build/${{ matrix.target }}/client
+            ${{ env.build_dir }}/server
+            ${{ env.build_dir }}/client
+
+      - name: Run Unit Tests
+        run: ctest --test-dir ${{ env.build_dir }} --output-junit report.xml --output-on-failure
+
+      - name: Publish Test Report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Tests (${{ env.build_config }})
+          path: ${{ env.build_dir }}/report.xml
+          reporter: java-junit

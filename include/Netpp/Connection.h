@@ -129,22 +129,22 @@ public:
 
   bool isProcessing() const
   {
-    return _processing;
+    return _processing.load(std::memory_order_acquire);
   }
 
   void setProcessing(bool v)
   {
-    _processing = v;
+    _processing.store(v, std::memory_order_release);
   }
 
   void setClosed(bool v)
   {
-    _closed = v;
+    _closed.store(v, std::memory_order_release);
   }
 
   bool isClosed() const
   {
-    return _closed;
+    return _closed.load(std::memory_order_acquire);
   }
 
 private:
