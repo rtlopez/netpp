@@ -1,7 +1,11 @@
 #pragma once
 
+#include <shared_mutex>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
+#include "Netpp/Connection.h"
 #include "Netpp/Core/TcpHandler.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
@@ -20,6 +24,8 @@ public:
   {
     on(CONNECT, [this](ConnectionPtr conn, const DataEvent &) { handleConnect(conn); });
 
+    on(DISCONNECT, [this](ConnectionPtr conn, const DataEvent &) { handleDisconnect(conn); });
+
     on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
   }
 
@@ -27,38 +33,37 @@ public:
   {
   }
 
-  std::shared_ptr<int> getContext(ConnectionPtr conn)
-  {
-    auto context = conn->getContext<int>();
-    if (!context)
-    {
-      context = std::make_shared<int>(0);
-      conn->setContext(context);
-    }
-    return context;
-  }
-
 private:
   void handleConnect(ConnectionPtr conn)
   {
+    {
+      std::unique_lock lock(_clientsMutex);
+      _clients[conn->getId()] = ConnectionWeakPtr{conn};
+    }
+
     std::string welcome = "Welcome to the chat room\n";
-    DataEvent resp{DataEvent::Buffer(welcome.begin(), welcome.end())};
-    _server->send(conn, std::move(resp));
+    _server->send(conn, {.buffer = {welcome.begin(), welcome.end()}});
+
+    std::string joinMsg = "A new user has joined the chat " + conn->getPeerName() + "\n";
+    broadcast(conn, joinMsg);
+  }
+
+  void handleDisconnect(ConnectionPtr conn)
+  {
+    {
+      std::unique_lock lock(_clientsMutex);
+      _clients.erase(conn->getId());
+    }
+
+    std::string leaveMsg = "A user has left the chat " + conn->getPeerName() + "\n";
+    broadcast(conn, leaveMsg);
   }
 
   void handleData(ConnectionPtr conn, const DataEvent &data)
   {
     auto str = std::string(data.buffer.begin(), data.buffer.end());
-    auto clients = _server->getProtocolConnections(this);
-    for (const ConnectionWeakPtr &w : clients)
-    {
-      auto c = w.lock();
-      if (c && c != conn)
-      {
-        DataEvent resp{DataEvent::Buffer(str.begin(), str.end())};
-        _server->send(c, std::move(resp));
-      }
-    }
+
+    broadcast(conn, str);
 
     for (size_t i = 0; i < 2 && !str.empty(); i++)
     {
@@ -72,7 +77,37 @@ private:
     logger(CHAT, LogLevel::DEBUG, str);
   }
 
+  void broadcast(ConnectionPtr conn, const std::string &message)
+  {
+    for (const auto &w : getClients())
+    {
+      auto c = w.lock();
+      if (c && c != conn)
+      {
+        _server->send(c, {.buffer = {message.begin(), message.end()}});
+      }
+    }
+  }
+
+  std::vector<ConnectionWeakPtr> getClients()
+  {
+    std::vector<ConnectionWeakPtr> clients;
+    {
+      std::shared_lock lock(_clientsMutex);
+      clients.reserve(_clients.size());
+      for (const auto &w : _clients)
+      {
+        clients.push_back(w.second);
+      }
+    }
+    return clients;
+  }
+
   Core::TcpHandler *_server;
+
+  // Writes (connect/disconnect) are exclusive, broadcasts can snapshot clients concurrently.
+  std::shared_mutex _clientsMutex;
+  std::unordered_map<int, ConnectionWeakPtr> _clients;
 };
 
 } // namespace Netpp::Chat

@@ -153,21 +153,6 @@ public:
     logger(TCP, LogLevel::WARN, "unknown", s);
   }
 
-  std::vector<ConnectionWeakPtr> getProtocolConnections(Protocol *protocol) const
-  {
-    // TODO: lock for other threads access
-    std::vector<ConnectionWeakPtr> connections;
-    connections.reserve(_connections.size());
-    for (const auto &pair : _connections)
-    {
-      if (pair.second->getProtocol() == protocol && !pair.second->isClosed())
-      {
-        connections.emplace_back(pair.second);
-      }
-    }
-    return connections;
-  }
-
   void handleWriting(sock_t s) override
   {
     logger(TCP, LogLevel::DEBUG, s, "begin");
