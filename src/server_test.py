@@ -8,6 +8,7 @@ Usage:
     python3 client.py -k test_echo     # run only the Echo test
     python3 client.py -v               # verbose output
 """
+
 import http.client
 import os
 import signal
@@ -20,6 +21,7 @@ HOST = "127.0.0.1"
 HTTP_PORT = 1234
 CHAT_PORT = 1235
 ECHO_PORT = 1236
+ECHO_UDP_PORT = 9000
 
 SERVER_BIN = os.path.join(os.path.dirname(__file__), "..", "build", "server")
 STARTUP_TIMEOUT = 2.0
@@ -100,25 +102,60 @@ class ServerTestCase(unittest.TestCase):
 
             # send from s1, expect to receive on s2
             s1.sendall(b"hello\n")
+            time.sleep(0.1)
             data = s2.recv(1024)
             self.assertIn(b"hello", data)
 
             # send from s2, expect to receive on s1
             s2.sendall(b"world\n")
+            time.sleep(0.1)
             data = s1.recv(1024)
             self.assertIn(b"world", data)
         finally:
             s1.close()
             s2.close()
 
-    # -- Echo -----------------------------------------------------------
-    def test_echo(self):
+    # -- Echo TCP -------------------------------------------------------
+    def test_echo_tcp_single(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(RECV_TIMEOUT)
             s.connect((HOST, ECHO_PORT))
             s.sendall(b"hello\n")
             data = s.recv(1024)
             self.assertEqual(data, b"hello\n")
+
+    # -- Echo UDP -------------------------------------------------------
+    def test_echo_udp_single(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(RECV_TIMEOUT)
+            s.sendto(b"hello\n", (HOST, ECHO_UDP_PORT))
+            data, addr = s.recvfrom(1024)
+            self.assertEqual(data, b"hello\n")
+
+    def test_echo_udp_multiple(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(RECV_TIMEOUT)
+            for msg in [b"aaa", b"bbb", b"ccc"]:
+                s.sendto(msg, (HOST, ECHO_UDP_PORT))
+                data, _ = s.recvfrom(1024)
+                self.assertEqual(data, msg)
+
+    def test_echo_udp_two_clients(self):
+        with (
+            socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s1,
+            socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s2,
+        ):
+            s1.settimeout(RECV_TIMEOUT)
+            s2.settimeout(RECV_TIMEOUT)
+
+            s1.sendto(b"from_s1", (HOST, ECHO_UDP_PORT))
+            s2.sendto(b"from_s2", (HOST, ECHO_UDP_PORT))
+
+            d1, _ = s1.recvfrom(1024)
+            d2, _ = s2.recvfrom(1024)
+
+            self.assertEqual(d1, b"from_s1")
+            self.assertEqual(d2, b"from_s2")
 
 
 class SignalTestCase(unittest.TestCase):
@@ -150,7 +187,9 @@ class SignalTestCase(unittest.TestCase):
             self.fail(f"Server did not exit within 3s after {sig.name}")
         finally:
             proc.stdout.close()
-        self.assertEqual(returncode, 0, f"Server exited with code {returncode} after {sig.name}")
+        self.assertEqual(
+            returncode, 0, f"Server exited with code {returncode} after {sig.name}"
+        )
 
     def test_sigint(self):
         proc = self._start_server()

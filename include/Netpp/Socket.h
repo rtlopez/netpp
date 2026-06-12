@@ -48,6 +48,18 @@ public:
     return ::recv(fd, buf, len, flags);
   }
 
+  static ssize_t sendto(sock_t fd, const void *buf, size_t len, int flags, const sockaddr_in &addr)
+  {
+    return ::sendto(fd, buf, len, flags, (const sockaddr *)&addr, sizeof(addr));
+  }
+
+  static ssize_t recvfrom(sock_t fd, void *buf, size_t len, int flags, sockaddr_in &addr)
+  {
+    socklen_t addr_len = sizeof(addr);
+    std::memset(&addr, 0, sizeof(addr));
+    return ::recvfrom(fd, buf, len, flags, (sockaddr *)&addr, &addr_len);
+  }
+
   static int bind(sock_t fd, const char *bind_addr, uint16_t bind_port)
   {
     const int enable = 1;
@@ -138,9 +150,8 @@ public:
     return afd;
   }
 
-  static int connect(sock_t fd, const char *host, uint16_t port)
+  static int connect(sock_t fd, const char *host, uint16_t port, sockaddr_in &addr)
   {
-    sockaddr_in addr;
     socklen_t addr_len = sizeof(addr);
     std::memset(&addr, 0, addr_len);
     addr.sin_family = AF_INET;
@@ -185,8 +196,13 @@ public:
     sockaddr_in addr;
     socklen_t addr_size = sizeof(sockaddr_in);
     ::getpeername(fd, (sockaddr *)&addr, &addr_size);
+    return getpeername(addr);
+  }
+
+  static const std::string getpeername(const sockaddr_in &addr)
+  {
     uint16_t port = addr.sin_port;
-    in_addr_t *saddr = &addr.sin_addr.s_addr;
+    const in_addr_t *saddr = &addr.sin_addr.s_addr;
     char ip_str[INET_ADDRSTRLEN];
     const char *clientip = ::inet_ntop(AF_INET, saddr, ip_str, INET_ADDRSTRLEN);
     return std::string{clientip} + std::string{":"} + std::to_string(port);

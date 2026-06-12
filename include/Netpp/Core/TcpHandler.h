@@ -17,13 +17,14 @@
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/Socket.h"
+#include "Netpp/TransportHandler.h"
 
 namespace Netpp::Core
 {
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
 
-class TcpHandler : public EventLoopHandler
+class TcpHandler : public EventLoopHandler, public TransportHandler
 {
 public:
   static constexpr const char *TCP = "tcp";
@@ -46,9 +47,10 @@ public:
   {
     logger(TCP, LogLevel::DEBUG, "connect", host, port);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
-    int ret = Socket::connect(s, host, port);
+    sockaddr_in addr;
+    int ret = Socket::connect(s, host, port, addr);
 
-    auto conn = std::make_shared<Connection>(s, protocol);
+    auto conn = std::make_shared<Connection>(s, protocol, addr);
     _connections.emplace(s, conn);
 
     if (ret == 0)
@@ -108,7 +110,7 @@ public:
         logger(TCP, LogLevel::ERROR, "accept:error", s, as, errno, ::strerror(errno));
         return;
       }
-      auto conn = std::make_shared<Connection>(as, protocol);
+      auto conn = std::make_shared<Connection>(as, protocol, addr);
       _connections.emplace(as, conn);
       _loop->add(as, this);
       handleConnect(conn);
@@ -209,12 +211,12 @@ public:
     logger(TCP, LogLevel::WARN, s, "unknown");
   }
 
-  void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
+  void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator) override
   {
     _dispatcher->send(conn, std::move(generator));
   }
 
-  void send(ConnectionPtr conn, DataEvent data)
+  void send(ConnectionPtr conn, DataEvent data) override
   {
     _dispatcher->send(conn, std::move(data));
   }

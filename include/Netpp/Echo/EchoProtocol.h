@@ -2,10 +2,10 @@
 
 #include <string>
 
-#include "Netpp/Core/TcpHandler.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
+#include "Netpp/TransportHandler.h"
 
 namespace Netpp::Echo
 {
@@ -18,7 +18,7 @@ class EchoProtocol : public Protocol
 public:
   static constexpr const char *ECHO = "echo";
 
-  EchoProtocol(Core::TcpHandler *server) : _server(server)
+  EchoProtocol(TransportHandler *server) : _server(server)
   {
     on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
   }
@@ -61,7 +61,7 @@ private:
     logger(ECHO, LogLevel::DEBUG, str);
   }
 
-  Core::TcpHandler *_server;
+  TransportHandler *_server;
 };
 
 } // namespace Netpp::Echo

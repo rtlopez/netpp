@@ -6,9 +6,9 @@
 #include <vector>
 
 #include "Netpp/Connection.h"
-#include "Netpp/Core/TcpHandler.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
+#include "Netpp/TransportHandler.h"
 
 namespace Netpp::Chat
 {
@@ -20,7 +20,7 @@ class ChatProtocol : public Protocol
 public:
   static constexpr const char *CHAT = "chat";
 
-  ChatProtocol(Core::TcpHandler *server) : _server(server)
+  ChatProtocol(TransportHandler *server) : _server(server)
   {
     on(CONNECT, [this](ConnectionPtr conn, const DataEvent &) { handleConnect(conn); });
 
@@ -103,7 +103,7 @@ private:
     return clients;
   }
 
-  Core::TcpHandler *_server;
+  TransportHandler *_server;
 
   // Writes (connect/disconnect) are exclusive, broadcasts can snapshot clients concurrently.
   std::shared_mutex _clientsMutex;

@@ -23,7 +23,8 @@ static const char *CONNECTION = "connection";
 class Connection
 {
 public:
-  Connection(sock_t s, Protocol *protocol = nullptr) : _s(s), _protocol(protocol)
+  Connection(sock_t s, Protocol *protocol, const sockaddr_in &peerAddr, bool ownsSocket = true)
+      : _s(s), _protocol(protocol), _peerAddr(peerAddr), _ownsSocket(ownsSocket)
   {
     logger(CONNECTION, LogLevel::DEBUG, _s);
   }
@@ -35,7 +36,7 @@ public:
       _context.reset();
     }
     logger(CONNECTION, LogLevel::DEBUG, _s);
-    if (_s >= 0)
+    if (_ownsSocket && _s >= 0)
     {
       Socket::close(_s);
       _s = -1;
@@ -44,7 +45,12 @@ public:
 
   std::string getPeerName() const
   {
-    return Socket::getpeername(_s);
+    return Socket::getpeername(_peerAddr);
+  }
+
+  const sockaddr_in &getPeerAddr() const
+  {
+    return _peerAddr;
   }
 
   int getId() const
@@ -151,6 +157,8 @@ public:
 private:
   sock_t _s;
   Protocol *_protocol;
+  sockaddr_in _peerAddr{};
+  bool _ownsSocket = true;
 
   // Protocol-specific context (type-erased)
   std::shared_ptr<void> _context;

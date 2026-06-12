@@ -4,13 +4,13 @@
 #include <memory>
 #include <string>
 
-#include "Netpp/Core/TcpHandler.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/Http/HttpException.h"
 #include "Netpp/Http/HttpRequest.h"
 #include "Netpp/Http/HttpResponse.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
+#include "Netpp/TransportHandler.h"
 
 namespace Netpp::Http
 {
@@ -23,7 +23,7 @@ public:
   static constexpr const char *HTTP = "http";
   using MiddlewareCallback = std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)>;
 
-  HttpProtocol(Core::TcpHandler *server) : _server(server)
+  HttpProtocol(TransportHandler *server) : _server(server)
   {
     on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
   }
@@ -137,7 +137,7 @@ private:
     }
   }
 
-  Core::TcpHandler *_server;
+  TransportHandler *_server;
   MiddlewareCallback _middleware;
 };
 

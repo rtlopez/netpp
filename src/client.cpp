@@ -10,6 +10,7 @@
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/SignalHandler.h"
+#include "Netpp/TransportHandler.h"
 
 static constexpr const char *ECHO_HOST = "127.0.0.1";
 static constexpr uint16_t ECHO_PORT = 1236;
@@ -17,7 +18,7 @@ static constexpr uint16_t ECHO_PORT = 1236;
 class ClientProtocol : public Netpp::Protocol
 {
 public:
-  ClientProtocol(Netpp::Core::TcpHandler *handler, Netpp::EventLoop *loop) : _handler(handler), _loop(loop)
+  ClientProtocol(Netpp::TransportHandler *handler, Netpp::EventLoop *loop) : _handler(handler), _loop(loop)
   {
     on(Netpp::EventType::CONNECT, [this](Netpp::ConnectionPtr conn, const Netpp::DataEvent &) {
       // store connection for sending data from stdin handler
@@ -51,7 +52,7 @@ public:
   }
 
 private:
-  Netpp::Core::TcpHandler *_handler;
+  Netpp::TransportHandler *_handler;
   Netpp::EventLoop *_loop;
   Netpp::ConnectionWeakPtr _conn;
 };

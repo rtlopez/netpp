@@ -18,6 +18,7 @@
 #include "Netpp/Core/SingleThreadDispatcher.h"
 #include "Netpp/Core/TcpHandler.h"
 #include "Netpp/Core/ThreadPoolDispatcher.h"
+#include "Netpp/Core/UdpHandler.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/Echo/EchoProtocol.h"
 #include "Netpp/EventLoopEpoll.h"
@@ -160,16 +161,20 @@ int main(int argc, const char **argv)
   {
     dispatcher.reset(new Netpp::Core::SingleThreadDispatcher(&loop));
   }
-  Netpp::Core::TcpHandler tcpServer{&loop, dispatcher.get()};
+  Netpp::Core::TcpHandler tcp{&loop, dispatcher.get()};
+  Netpp::Core::UdpHandler udp{&loop, dispatcher.get()};
 
-  Netpp::Chat::ChatProtocol chat{&tcpServer};
-  Netpp::Echo::EchoProtocol echo{&tcpServer};
-  Netpp::Http::HttpProtocol http{&tcpServer};
+  Netpp::Chat::ChatProtocol chat{&tcp};
+  Netpp::Echo::EchoProtocol echoUdp{&udp}; // działa bez zmian w logice
+  Netpp::Echo::EchoProtocol echoTcp{&tcp};
+  Netpp::Http::HttpProtocol http{&tcp};
+
   Netpp::Http::HttpRouter router;
 
-  tcpServer.listen(args.host.c_str(), static_cast<uint16_t>(args.httpPort), &http);
-  tcpServer.listen(args.host.c_str(), static_cast<uint16_t>(args.chatPort), &chat);
-  tcpServer.listen(args.host.c_str(), static_cast<uint16_t>(args.echoPort), &echo);
+  tcp.listen(args.host.c_str(), static_cast<uint16_t>(args.httpPort), &http);
+  tcp.listen(args.host.c_str(), static_cast<uint16_t>(args.chatPort), &chat);
+  tcp.listen(args.host.c_str(), static_cast<uint16_t>(args.echoPort), &echoTcp);
+  udp.listen(args.host.c_str(), 9000, &echoUdp);
 
   http.addMiddleware(
       [&router](Netpp::Http::HttpRequest &req, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr conn) {
