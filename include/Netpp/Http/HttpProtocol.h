@@ -4,27 +4,26 @@
 #include <memory>
 #include <string>
 
+#include "Netpp/Core/TcpHandler.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/Http/HttpException.h"
 #include "Netpp/Http/HttpRequest.h"
 #include "Netpp/Http/HttpResponse.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
-#include "Netpp/TcpServer.h"
 
 namespace Netpp::Http
 {
-
-using Netpp::Logger::logger;
-using Netpp::Logger::LogLevel;
-static const char *HTTP = "http";
+using Logger::logger;
+using Logger::LogLevel;
 
 class HttpProtocol : public Protocol
 {
 public:
+  static constexpr const char *HTTP = "http";
   using MiddlewareCallback = std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)>;
 
-  HttpProtocol(TcpServer *server) : _server(server)
+  HttpProtocol(Core::TcpHandler *server) : _server(server)
   {
   }
 
@@ -142,7 +141,7 @@ private:
     }
   }
 
-  TcpServer *_server;
+  Core::TcpHandler *_server;
   MiddlewareCallback _middleware;
 };
 

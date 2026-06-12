@@ -7,23 +7,23 @@
 #include <thread>
 #include <vector>
 
-#include "Dispatcher.h"
-#include "Logger/Logger.h"
+#include "Netpp/Dispatcher.h"
+#include "Netpp/Logger/Logger.h"
 
-namespace Netpp
+namespace Netpp::Core
 {
-
-using Netpp::Logger::logger;
-using Netpp::Logger::LogLevel;
-static const char *TDISPATCH = "dispatch";
+using Logger::logger;
+using Logger::LogLevel;
 
 // schedule received data processing to thread pool and drain send queue in main thread
 class ThreadPoolDispatcher : public Dispatcher
 {
 public:
+  static constexpr const char *DISPATCH = "dispatch";
+
   ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop), _stop(false)
   {
-    logger(TDISPATCH, LogLevel::DEBUG, numThreads);
+    logger(DISPATCH, LogLevel::DEBUG, numThreads);
     _workers.reserve(numThreads);
     for (size_t i = 0; i < numThreads; i++)
     {
@@ -38,7 +38,7 @@ public:
 
   void stop() override
   {
-    logger(TDISPATCH, LogLevel::DEBUG, "");
+    logger(DISPATCH, LogLevel::DEBUG, "");
     {
       std::scoped_lock lock(_taskMutex);
       if (_stop)
@@ -91,7 +91,7 @@ public:
           {
             return;
           }
-          logger(TDISPATCH, LogLevel::DEBUG, conn->getId(), "gen:cont");
+          logger(DISPATCH, LogLevel::DEBUG, conn->getId(), "gen:cont");
           data = conn->runGenerator();
         }
         send(conn, std::move(data));
@@ -104,7 +104,7 @@ public:
     auto &queue = conn->sendQueue();
     {
       std::scoped_lock sendLock(conn->sendMutex());
-      logger(TDISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
+      logger(DISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
     }
     while (true)
     {
@@ -145,7 +145,7 @@ public:
 
   void post(MoveOnlyFunction<void()> task) override
   {
-    logger(TDISPATCH, LogLevel::TRACE, "");
+    logger(DISPATCH, LogLevel::TRACE, "");
     {
       std::scoped_lock lock(_taskMutex);
       _taskQueue.push(std::move(task));
@@ -155,7 +155,7 @@ public:
 
   void post(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
   {
-    logger(TDISPATCH, LogLevel::TRACE, conn->getId());
+    logger(DISPATCH, LogLevel::TRACE, conn->getId());
     bool shouldSchedule = false;
     {
       std::scoped_lock lock(conn->strandMutex());
@@ -181,7 +181,7 @@ private:
       auto conn = weak.lock();
       if (!conn)
       {
-        logger(TDISPATCH, LogLevel::DEBUG, "connection expired, dropping tasks");
+        logger(DISPATCH, LogLevel::DEBUG, "connection expired, dropping tasks");
         return;
       }
       MoveOnlyFunction<void()> task;
@@ -215,7 +215,7 @@ private:
         task = std::move(_taskQueue.front());
         _taskQueue.pop();
       }
-      logger(TDISPATCH, LogLevel::TRACE, "");
+      logger(DISPATCH, LogLevel::TRACE, "");
       task();
     }
   }
@@ -230,4 +230,4 @@ private:
   std::condition_variable _taskCv;
 };
 
-} // namespace Netpp
+} // namespace Netpp::Core

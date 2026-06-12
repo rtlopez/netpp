@@ -2,21 +2,22 @@
 
 #include <string>
 
+#include "Netpp/Core/TcpHandler.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
-#include "Netpp/TcpServer.h"
 
 namespace Netpp::Echo
 {
 
-using Netpp::Logger::logger;
-using Netpp::Logger::LogLevel;
-static const char *ECHO = "echo";
+using Logger::logger;
+using Logger::LogLevel;
 
 class EchoProtocol : public Protocol
 {
 public:
-  EchoProtocol(TcpServer *server) : _server(server)
+  static constexpr const char *ECHO = "echo";
+
+  EchoProtocol(Core::TcpHandler *server) : _server(server)
   {
   }
 
@@ -62,7 +63,7 @@ public:
   }
 
 private:
-  TcpServer *_server;
+  Core::TcpHandler *_server;
 };
 
 } // namespace Netpp::Echo

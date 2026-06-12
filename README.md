@@ -14,39 +14,57 @@ C++ networking library educational demo
 
 ```cpp
   Netpp::EventLoopEpoll loop;
+  Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}}; // stop loop on signal
+  Netpp::Core::ThreadPoll dispatcher; // route data to thread workers
+  Netpp::Core::TcpHandler tcp{&loop, &dispatcher}; // handle tcp sockets events
 
-  Netpp::Http::HttpProtocol http;
+  Netpp::Http::HttpProtocol http(&tcp); // protocol handler
 
-  Netpp::TcpServer httpServer{"127.0.0.1", 1234, &loop, &http};
+  tcp.listen("127.0.0.1", 1234, &http); // bind protocol to port
 
-  loop.run();
+  loop.run(); // run processing loop
+
+  dispatcher.stop(); // join threads before destroing objects
 ```
 
 ## Chat and Echo server example
 
 ```cpp
   Netpp::EventLoopEpoll loop;
+  Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
+  Netpp::Core::SingleThreadDispatcher dispatcher;
+  Netpp::Core::TcpHandler tcp{&loop, &dispatcher};
 
-  Netpp::Chat::ChatProtocol chat;
-  Netpp::Echo::EchoProtocol echo;
+  Netpp::Chat::ChatProtocol chat{&tcp};
+  Netpp::Echo::EchoProtocol echo(&tcp);
 
-  Netpp::TcpServer chatServer{"127.0.0.1", 1235, &loop, &chat};
-  Netpp::TcpServer echoServer{"127.0.0.1", 1236, &loop, &echo};
+  tcp.listen("127.0.0.1", 1235, &chat);
+  tcp.listen("127.0.0.1", 1236, &echo);
 
   loop.run();
+  dispatcher.stop();
 ```
 
-# Building
+# Configuring and Building
 
 ```bash
 # Configure the project
 cmake -S . -B ./build
 
-# Build the project
+# specify compiler and build type
+cmake -S . -B ./build/ -D CMAKE_BUILD_TYPE=Debug -D CMAKE_CXX_COMPILER=clang
+
+# Build all targets
 cmake --build ./build
 
+# Build server example only
+cmake --build ./build -t server
+
+# clean
+cmake --build ./build -t clean
+
 # Run unit tests
-cd build && ctest
+ctest --test-dir ./build
 
 # Run integration tests
 python3 src/server_test.py

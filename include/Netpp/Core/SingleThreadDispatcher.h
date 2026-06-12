@@ -1,19 +1,19 @@
 #pragma once
 
-#include "Dispatcher.h"
-#include "Logger/Logger.h"
+#include "Netpp/Dispatcher.h"
+#include "Netpp/Logger/Logger.h"
 
-namespace Netpp
+namespace Netpp::Core
 {
-
-using Netpp::Logger::logger;
-using Netpp::Logger::LogLevel;
-static const char *SDISPATCH = "dispatch";
+using Logger::logger;
+using Logger::LogLevel;
 
 // single-threaded, immediate execution, no thread pool, for testing and simple use cases
 class SingleThreadDispatcher : public Dispatcher
 {
 public:
+  static constexpr const char *DISPATCH = "dispatch";
+
   SingleThreadDispatcher(EventLoop *loop) : Dispatcher(loop)
   {
   }
@@ -34,27 +34,27 @@ public:
   {
     if (conn->hasGenerator())
     {
-      logger(SDISPATCH, LogLevel::DEBUG, conn->getId(), "gen:cont");
+      logger(DISPATCH, LogLevel::DEBUG, conn->getId(), "gen:cont");
       send(conn, conn->runGenerator());
     }
   }
 
   void post(MoveOnlyFunction<void()> task) override
   {
-    logger(SDISPATCH, LogLevel::TRACE, "fn");
+    logger(DISPATCH, LogLevel::TRACE, "fn");
     task();
   }
 
   void post(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
   {
-    logger(SDISPATCH, LogLevel::TRACE, conn->getId(), "con");
+    logger(DISPATCH, LogLevel::TRACE, conn->getId(), "con");
     task();
   }
 
   DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent &)> sendFunc) override
   {
     auto &queue = conn->sendQueue();
-    logger(SDISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
+    logger(DISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
     while (!queue.empty())
     {
       auto &data = queue.front();
@@ -83,4 +83,4 @@ public:
   }
 };
 
-} // namespace Netpp
+} // namespace Netpp::Core

@@ -2,21 +2,21 @@
 
 #include <string>
 
+#include "Netpp/Core/TcpHandler.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
-#include "Netpp/TcpServer.h"
 
 namespace Netpp::Chat
 {
-
-using Netpp::Logger::logger;
-using Netpp::Logger::LogLevel;
-static const char *CHAT = "chat";
+using Logger::logger;
+using Logger::LogLevel;
 
 class ChatProtocol : public Protocol
 {
 public:
-  ChatProtocol(TcpServer *server) : _server(server)
+  static constexpr const char *CHAT = "chat";
+
+  ChatProtocol(Core::TcpHandler *server) : _server(server)
   {
   }
 
@@ -71,7 +71,7 @@ public:
   }
 
 private:
-  TcpServer *_server;
+  Core::TcpHandler *_server;
 };
 
 } // namespace Netpp::Chat

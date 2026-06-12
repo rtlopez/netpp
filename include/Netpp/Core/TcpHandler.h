@@ -18,33 +18,33 @@
 #include "Netpp/Protocol.h"
 #include "Netpp/Socket.h"
 
-namespace Netpp
+namespace Netpp::Core
 {
-
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
-static const char *TCPSERVER = "tcpserver";
 
-class TcpServer : public EventLoopHandler
+class TcpHandler : public EventLoopHandler
 {
 public:
-  TcpServer(EventLoop *loop, Dispatcher *dispatcher) : _loop(loop), _dispatcher(dispatcher)
+  static constexpr const char *TCP = "tcp";
+
+  TcpHandler(EventLoop *loop, Dispatcher *dispatcher) : _loop(loop), _dispatcher(dispatcher)
   {
   }
 
   void listen(const char *addr, uint16_t port, Protocol *protocol)
   {
-    logger(TCPSERVER, LogLevel::DEBUG, addr, port);
+    logger(TCP, LogLevel::DEBUG, addr, port);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     Socket::bind(s, addr, port);
-    Socket::listen(s, 256);
+    Socket::listen(s, 500);
     _listeners.emplace(s, protocol);
     _loop->add(s, this);
   }
 
   ConnectionWeakPtr connect(const char *host, uint16_t port, Protocol *protocol)
   {
-    logger(TCPSERVER, LogLevel::DEBUG, "connect", host, port);
+    logger(TCP, LogLevel::DEBUG, "connect", host, port);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     int ret = Socket::connect(s, host, port);
 
@@ -75,9 +75,9 @@ public:
     return conn;
   }
 
-  virtual ~TcpServer()
+  virtual ~TcpHandler()
   {
-    logger(TCPSERVER, LogLevel::DEBUG, _listeners.size());
+    logger(TCP, LogLevel::DEBUG, _listeners.size());
     for (auto &[s, protocol] : _listeners)
     {
       _loop->del(s);
@@ -87,7 +87,7 @@ public:
 
   void handleError(sock_t s) override
   {
-    logger(TCPSERVER, LogLevel::DEBUG, s);
+    logger(TCP, LogLevel::DEBUG, s);
     _connecting.erase(s);
     close(s);
   }
@@ -97,13 +97,13 @@ public:
     auto lsi = _listeners.find(s);
     if (lsi != _listeners.end())
     {
-      logger(TCPSERVER, LogLevel::DEBUG, "accept", s);
+      logger(TCP, LogLevel::DEBUG, "accept", s);
       auto protocol = lsi->second;
       sockaddr_in addr;
       sock_t as = Socket::accept(s, addr);
       if (as <= 0)
       {
-        logger(TCPSERVER, LogLevel::ERROR, "accept:error", s, as, errno, ::strerror(errno));
+        logger(TCP, LogLevel::ERROR, "accept:error", s, as, errno, ::strerror(errno));
         return;
       }
       auto conn = std::make_shared<Connection>(as, protocol);
@@ -129,7 +129,7 @@ public:
       auto len = Socket::recv(s, data.buffer.data(), data.buffer.size(), 0);
       auto err = errno;
 
-      logger(TCPSERVER, LogLevel::DEBUG, "recv", s, len);
+      logger(TCP, LogLevel::DEBUG, "recv", s, len);
 
       if (len > 0)
       {
@@ -144,7 +144,7 @@ public:
       }
       else if (len == 0)
       {
-        logger(TCPSERVER, LogLevel::WARN, s, "closed by peer");
+        logger(TCP, LogLevel::WARN, s, "closed by peer");
         conn->setClosed(true);
         close(s);
       }
@@ -154,14 +154,14 @@ public:
       }
       else
       {
-        logger(TCPSERVER, LogLevel::ERROR, "recv:error", s, len, err, ::strerror(err));
+        logger(TCP, LogLevel::ERROR, "recv:error", s, len, err, ::strerror(err));
         conn->setClosed(true);
         close(s);
       }
       return;
     }
 
-    logger(TCPSERVER, LogLevel::WARN, "unknown", s);
+    logger(TCP, LogLevel::WARN, "unknown", s);
   }
 
   std::vector<ConnectionWeakPtr> getProtocolConnections(Protocol *protocol) const
@@ -181,7 +181,7 @@ public:
 
   void handleWriting(sock_t s) override
   {
-    logger(TCPSERVER, LogLevel::DEBUG, s, "begin");
+    logger(TCP, LogLevel::DEBUG, s, "begin");
 
     // check if this is a connecting socket completing async connect
     auto ci = _connecting.find(s);
@@ -195,12 +195,12 @@ public:
 
       if (so_error != 0)
       {
-        logger(TCPSERVER, LogLevel::ERROR, "connect:failed", s, so_error, ::strerror(so_error));
+        logger(TCP, LogLevel::ERROR, "connect:failed", s, so_error, ::strerror(so_error));
         close(s);
         return;
       }
 
-      logger(TCPSERVER, LogLevel::DEBUG, "connect:ok", s);
+      logger(TCP, LogLevel::DEBUG, "connect:ok", s);
       _loop->mod(s, false); // switch back to EPOLLIN only
 
       auto it = _connections.find(s);
@@ -226,7 +226,7 @@ public:
       DrainResult result =
           _dispatcher->drain(conn, [this](ConnectionPtr conn, DataEvent &data) { return sendNow(conn, data); });
 
-      logger(TCPSERVER, LogLevel::DEBUG, s, to_string(result));
+      logger(TCP, LogLevel::DEBUG, s, to_string(result));
 
       if (result == DrainResult::Close)
       {
@@ -239,7 +239,7 @@ public:
       return;
     }
 
-    logger(TCPSERVER, LogLevel::WARN, "unknown", s);
+    logger(TCP, LogLevel::WARN, "unknown", s);
   }
 
   void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
@@ -264,7 +264,7 @@ private:
     {
       auto len = Socket::send(conn->getId(), data.buffer.data() + data.sent, data.buffer.size() - data.sent, 0);
       auto err = errno;
-      logger(TCPSERVER, LogLevel::DEBUG, conn->getId(), len, data.close);
+      logger(TCP, LogLevel::DEBUG, conn->getId(), len, data.close);
       if (len < 0)
       {
         if (err == EAGAIN || err == EWOULDBLOCK)
@@ -272,7 +272,7 @@ private:
           // unable to drain connection buffer, wait for next writable event
           return false;
         }
-        logger(TCPSERVER, LogLevel::ERROR, conn->getId(), len, err, ::strerror(err));
+        logger(TCP, LogLevel::ERROR, conn->getId(), len, err, ::strerror(err));
         data.close = true;              // mark for close
         data.sent = data.buffer.size(); // mark as "done" so close triggers
         return true;
@@ -287,7 +287,7 @@ private:
 
   void close(sock_t s)
   {
-    logger(TCPSERVER, LogLevel::DEBUG, s);
+    logger(TCP, LogLevel::DEBUG, s);
     _connecting.erase(s);
     _loop->del(s); // remove from epoll before closing the fd
     auto it = _connections.find(s);
@@ -304,4 +304,4 @@ private:
   std::unordered_set<sock_t> _connecting; // sockets with async connect in progress
 };
 
-} // namespace Netpp
+} // namespace Netpp::Core

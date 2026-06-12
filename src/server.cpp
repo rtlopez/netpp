@@ -15,6 +15,9 @@
 #include <lyra/lyra.hpp>
 
 #include "Netpp/Chat/ChatProtocol.h"
+#include "Netpp/Core/SingleThreadDispatcher.h"
+#include "Netpp/Core/TcpHandler.h"
+#include "Netpp/Core/ThreadPoolDispatcher.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/Echo/EchoProtocol.h"
 #include "Netpp/EventLoopEpoll.h"
@@ -23,9 +26,6 @@
 #include "Netpp/Http/HttpRouter.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/SignalHandler.h"
-#include "Netpp/SingleThreadDispatcher.h"
-#include "Netpp/TcpServer.h"
-#include "Netpp/ThreadPoolDispatcher.h"
 
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
@@ -154,13 +154,13 @@ int main(int argc, const char **argv)
   std::unique_ptr<Netpp::Dispatcher> dispatcher;
   if (args.workerThreads > 0)
   {
-    dispatcher.reset(new Netpp::ThreadPoolDispatcher(&loop, args.workerThreads));
+    dispatcher.reset(new Netpp::Core::ThreadPoolDispatcher(&loop, args.workerThreads));
   }
   else
   {
-    dispatcher.reset(new Netpp::SingleThreadDispatcher(&loop));
+    dispatcher.reset(new Netpp::Core::SingleThreadDispatcher(&loop));
   }
-  Netpp::TcpServer tcpServer{&loop, dispatcher.get()};
+  Netpp::Core::TcpHandler tcpServer{&loop, dispatcher.get()};
 
   Netpp::Chat::ChatProtocol chat{&tcpServer};
   Netpp::Echo::EchoProtocol echo{&tcpServer};
