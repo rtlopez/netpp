@@ -39,16 +39,18 @@ public:
       std::string line;
       std::getline(_file, line);
       line += "\n";
-      logger(FILESTREAM, LogLevel::DEBUG, line.size(), _file.eof());
-      return {.buffer = {line.begin(), line.end()}, .close = _file.eof()};
+      auto eventType = _file.eof() ? EventType::DISCONNECT : EventType::DATA;
+      logger(FILESTREAM, LogLevel::DEBUG, line.size(), _file.eof(), eventType);
+      return {.buffer = {line.begin(), line.end()}, .eventType = eventType};
     }
 
-    std::vector<uint8_t> buffer(_size);
+    DataEvent::Buffer buffer(_size);
     _file.read(reinterpret_cast<char *>(buffer.data()), _size);
     auto bytesRead = _file.gcount();
     buffer.resize(static_cast<size_t>(bytesRead));
-    logger(FILESTREAM, LogLevel::DEBUG, buffer.size(), _file.eof());
-    return {.buffer = std::move(buffer), .close = _file.eof()};
+    auto eventType = _file.eof() ? EventType::DISCONNECT : EventType::DATA;
+    logger(FILESTREAM, LogLevel::DEBUG, buffer.size(), _file.eof(), eventType);
+    return {.buffer = std::move(buffer), .eventType = eventType};
   }
 
 private:

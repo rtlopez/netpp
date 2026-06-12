@@ -19,36 +19,34 @@ class ClientProtocol : public Netpp::Protocol
 public:
   ClientProtocol(Netpp::Core::TcpHandler *handler, Netpp::EventLoop *loop) : _handler(handler), _loop(loop)
   {
-  }
-
-  void onReceive(Netpp::ConnectionPtr conn, Netpp::DataEvent data) override
-  {
-    if (data.connect)
-    {
+    on(Netpp::EventType::CONNECT, [this](Netpp::ConnectionPtr conn, const Netpp::DataEvent &) {
+      // store connection for sending data from stdin handler
       _conn = conn;
-      return;
-    }
+    });
 
-    if (data.disconnect)
-    {
+    on(Netpp::EventType::DISCONNECT, [this](Netpp::ConnectionPtr, const Netpp::DataEvent &) {
+      // stop loop on disconnection
       _conn.reset();
       _loop->stop();
-      return;
-    }
+    });
 
-    if (!data.buffer.empty())
-    {
-      std::cout.write(reinterpret_cast<const char *>(data.buffer.data()), data.buffer.size());
-      std::cout.flush();
-    }
+    on(Netpp::EventType::DATA, [](Netpp::ConnectionPtr, const Netpp::DataEvent &data) {
+      // print received data to stdout
+      if (!data.buffer.empty())
+      {
+        std::cout.write(reinterpret_cast<const char *>(data.buffer.data()), data.buffer.size());
+        std::cout.flush();
+      }
+    });
   }
 
   void send(const std::string &line)
   {
+    // send data to connected server
     if (auto conn = _conn.lock())
     {
-      Netpp::DataEvent ev{.buffer = Netpp::DataEvent::Buffer(line.begin(), line.end())};
-      _handler->send(conn, std::move(ev));
+      Netpp::DataEvent data{.buffer = {line.begin(), line.end()}, .eventType = Netpp::EventType::DATA};
+      _handler->send(conn, std::move(data));
     }
   }
 
@@ -61,14 +59,16 @@ private:
 class StdinHandler : public Netpp::EventLoopHandler
 {
 public:
-  StdinHandler(Netpp::EventLoop *loop, ClientProtocol *protocol) : _loop(loop), _protocol(protocol)
+  StdinHandler(Netpp::EventLoop *loop, std::function<void(const std::string &)> receiver)
+      : _loop(loop), _receiver(receiver)
   {
-    loop->add(STDIN_FILENO, this);
+    // add stdin fd to event loop
+    _loop->add(STDIN_FILENO, this);
   }
 
   void handleReading(Netpp::sock_t s) override
   {
-    Netpp::Logger::logger("stdin", Netpp::Logger::LogLevel::DEBUG, s, "read");
+    // read a line from stdin and send to receiver callback
     std::string line;
     if (!std::getline(std::cin, line))
     {
@@ -77,22 +77,24 @@ public:
       return;
     }
     line += '\n';
-    _protocol->send(line);
+    _receiver(line);
   }
 
   void handleWriting(Netpp::sock_t) override
   {
+    // not used for stdin
   }
 
   void handleError(Netpp::sock_t s) override
   {
+    // log error and stop loop
     Netpp::Logger::logger("stdin", Netpp::Logger::LogLevel::DEBUG, s, "error");
     _loop->stop();
   }
 
 private:
   Netpp::EventLoop *_loop;
-  ClientProtocol *_protocol;
+  std::function<void(const std::string &)> _receiver;
 };
 
 int main()
@@ -101,7 +103,7 @@ int main()
       std::make_unique<Netpp::Logger::LogFormatterSimple>(), std::make_unique<Netpp::Logger::LogWriterConsole>());
 
   Netpp::Logger::Logger::getInstance()->addHandler(std::move(logHandler));
-  Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::TRACE);
+  Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::DEBUG);
 
   Netpp::EventLoopEpoll loop;
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
@@ -109,7 +111,7 @@ int main()
   Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher};
 
   ClientProtocol protocol{&tcpHandler, &loop};
-  StdinHandler stdinHandler{&loop, &protocol};
+  StdinHandler stdinHandler{&loop, [&protocol](const std::string &line) { protocol.send(line); }};
 
   tcpHandler.connect(ECHO_HOST, ECHO_PORT, &protocol);
 

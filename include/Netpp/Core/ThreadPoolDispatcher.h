@@ -33,6 +33,7 @@ public:
 
   virtual ~ThreadPoolDispatcher()
   {
+    logger(DISPATCH, LogLevel::DEBUG, "");
     stop();
   }
 
@@ -133,7 +134,7 @@ public:
         }
       }
 
-      if (data.close)
+      if (data.eventType == EventType::DISCONNECT)
       {
         return DrainResult::Close; // chunk with close flag
       }

@@ -18,6 +18,11 @@ public:
   {
   }
 
+  virtual ~SingleThreadDispatcher()
+  {
+    logger(DISPATCH, LogLevel::DEBUG, "");
+  }
+
   void send(ConnectionPtr conn, DataEvent data) override
   {
     conn->sendQueue().push_back(std::move(data));
@@ -69,7 +74,7 @@ public:
         }
       }
 
-      if (data.close)
+      if (data.eventType == EventType::DISCONNECT)
       {
         // no need to pop as connection destructor will do it
         return DrainResult::Close; // chunk with close flag

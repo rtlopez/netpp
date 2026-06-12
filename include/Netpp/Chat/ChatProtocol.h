@@ -18,6 +18,9 @@ public:
 
   ChatProtocol(Core::TcpHandler *server) : _server(server)
   {
+    on(CONNECT, [this](ConnectionPtr conn, const DataEvent &) { handleConnect(conn); });
+
+    on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
   }
 
   virtual ~ChatProtocol()
@@ -35,21 +38,16 @@ public:
     return context;
   }
 
-  void onReceive(ConnectionPtr conn, DataEvent data) override
+private:
+  void handleConnect(ConnectionPtr conn)
   {
-    if (data.disconnect)
-    {
-      return;
-    }
+    std::string welcome = "Welcome to the chat room\n";
+    DataEvent resp{DataEvent::Buffer(welcome.begin(), welcome.end())};
+    _server->send(conn, std::move(resp));
+  }
 
-    if (data.connect)
-    {
-      std::string welcome = "Welcome to the chat room\n";
-      DataEvent resp{DataEvent::Buffer(welcome.begin(), welcome.end())};
-      _server->send(conn, std::move(resp));
-      return;
-    }
-
+  void handleData(ConnectionPtr conn, const DataEvent &data)
+  {
     auto str = std::string(data.buffer.begin(), data.buffer.end());
     auto clients = _server->getProtocolConnections(this);
     for (const ConnectionWeakPtr &w : clients)
@@ -74,7 +72,6 @@ public:
     logger(CHAT, LogLevel::DEBUG, str);
   }
 
-private:
   Core::TcpHandler *_server;
 };
 

@@ -203,7 +203,8 @@ int main(int argc, const char **argv)
     res.setGenerator([counter = 0]() mutable -> Netpp::DataEvent {
       counter++;
       std::string data = "line " + std::to_string(counter) + "\n";
-      return {.buffer = {data.begin(), data.end()}, .close = counter >= 5};
+      auto eventType = counter >= 5 ? Netpp::EventType::DISCONNECT : Netpp::EventType::DATA;
+      return {.buffer = {data.begin(), data.end()}, .eventType = eventType};
     });
   });
 

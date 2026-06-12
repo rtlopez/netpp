@@ -3,6 +3,7 @@
 #include <string>
 
 #include "Netpp/Core/TcpHandler.h"
+#include "Netpp/DataEvent.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
 
@@ -19,25 +20,23 @@ public:
 
   EchoProtocol(Core::TcpHandler *server) : _server(server)
   {
+    on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
   }
 
   virtual ~EchoProtocol()
   {
   }
 
-  void onReceive(ConnectionPtr conn, DataEvent data) override
+private:
+  void handleData(ConnectionPtr conn, const DataEvent &data)
   {
-    if (data.connect || data.disconnect)
-    {
-      return;
-    }
-
     auto str = std::string(data.buffer.begin(), data.buffer.end());
 
-    bool close = str.starts_with("close") || str.starts_with("exit") || str.starts_with("quit");
+    auto close = str.starts_with("close") || str.starts_with("exit") || str.starts_with("quit");
     bool infinite = str.starts_with("inf");
 
-    DataEvent resp{.buffer = DataEvent::Buffer(str.begin(), str.end()), .close = close};
+    EventType eventType = close ? EventType::DISCONNECT : EventType::DATA;
+    DataEvent resp{.buffer = {str.begin(), str.end()}, .eventType = eventType};
     _server->send(conn, std::move(resp));
 
     if (infinite)
@@ -62,7 +61,6 @@ public:
     logger(ECHO, LogLevel::DEBUG, str);
   }
 
-private:
   Core::TcpHandler *_server;
 };
 

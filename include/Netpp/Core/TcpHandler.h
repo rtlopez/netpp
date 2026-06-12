@@ -55,14 +55,7 @@ public:
     {
       // immediate connect (rare for non-blocking)
       _loop->add(s, this);
-      DataEvent data{.buffer = DataEvent::Buffer(), .connect = true};
-      ConnectionWeakPtr weak{conn};
-      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
-        if (auto conn = weak.lock())
-        {
-          conn->getProtocol()->onReceive(conn, std::move(data));
-        }
-      });
+      handleConnect(conn);
     }
     else
     {
@@ -94,11 +87,8 @@ public:
     if (it != _connections.end())
     {
       auto conn = it->second;
-      conn->setClosed(true);
-      DataEvent disconnect{.buffer = DataEvent::Buffer(), .disconnect = true};
-      _dispatcher->post(conn, [conn, disconnect = std::move(disconnect)]() mutable {
-        conn->getProtocol()->onReceive(conn, std::move(disconnect));
-      });
+      handleError(conn);
+      handleDisconnect(conn);
     }
 
     close(s);
@@ -121,14 +111,7 @@ public:
       auto conn = std::make_shared<Connection>(as, protocol);
       _connections.emplace(as, conn);
       _loop->add(as, this);
-      DataEvent data{.buffer = DataEvent::Buffer(), .connect = true};
-      ConnectionWeakPtr weak{conn};
-      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
-        if (auto conn = weak.lock())
-        {
-          conn->getProtocol()->onReceive(conn, std::move(data));
-        }
-      });
+      handleConnect(conn);
       return;
     }
 
@@ -146,22 +129,12 @@ public:
       if (len > 0)
       {
         data.buffer.resize(static_cast<size_t>(len)); // set actual buffer size
-        ConnectionWeakPtr weak{conn};
-        _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
-          if (auto conn = weak.lock())
-          {
-            conn->getProtocol()->onReceive(conn, std::move(data));
-          }
-        });
+        handleData(conn, std::move(data));
       }
       else if (len == 0)
       {
         logger(TCP, LogLevel::WARN, s, "closed by peer");
-        conn->setClosed(true);
-        DataEvent disconnect{.buffer = DataEvent::Buffer(), .disconnect = true};
-        _dispatcher->post(conn, [conn, disconnect = std::move(disconnect)]() mutable {
-          conn->getProtocol()->onReceive(conn, std::move(disconnect));
-        });
+        handleDisconnect(conn);
         close(s);
       }
       else if (err == EAGAIN || err == EWOULDBLOCK)
@@ -171,11 +144,7 @@ public:
       else
       {
         logger(TCP, LogLevel::ERROR, "recv:error", s, len, err, ::strerror(err));
-        conn->setClosed(true);
-        DataEvent disconnect{.buffer = DataEvent::Buffer(), .disconnect = true};
-        _dispatcher->post(conn, [conn, disconnect = std::move(disconnect)]() mutable {
-          conn->getProtocol()->onReceive(conn, std::move(disconnect));
-        });
+        handleDisconnect(conn);
         close(s);
       }
       return;
@@ -227,14 +196,7 @@ public:
       if (it != _connections.end())
       {
         auto conn = it->second;
-        DataEvent data{.buffer = DataEvent::Buffer(), .connect = true};
-        ConnectionWeakPtr weak{conn};
-        _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
-          if (auto conn = weak.lock())
-          {
-            conn->getProtocol()->onReceive(conn, std::move(data));
-          }
-        });
+        handleConnect(conn);
       }
       return;
     }
@@ -259,7 +221,7 @@ public:
       return;
     }
 
-    logger(TCP, LogLevel::WARN, "unknown", s);
+    logger(TCP, LogLevel::WARN, s, "unknown");
   }
 
   void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator)
@@ -273,6 +235,61 @@ public:
   }
 
 private:
+  void handleConnect(ConnectionPtr conn)
+  {
+    if (conn->getProtocol()->hasHandler(Netpp::EventType::CONNECT))
+    {
+      DataEvent data{.eventType = Netpp::EventType::CONNECT};
+      ConnectionWeakPtr weak{conn};
+      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+        if (auto conn = weak.lock())
+        {
+          conn->getProtocol()->handle(conn, std::move(data));
+        }
+      });
+    }
+  }
+
+  void handleDisconnect(ConnectionPtr conn)
+  {
+    conn->setClosed(true);
+    if (conn->getProtocol()->hasHandler(Netpp::EventType::DISCONNECT))
+    {
+      DataEvent data{.eventType = Netpp::EventType::DISCONNECT};
+      _dispatcher->post(
+          conn, [conn, data = std::move(data)]() mutable { conn->getProtocol()->handle(conn, std::move(data)); });
+    }
+  }
+
+  void handleData(ConnectionPtr conn, DataEvent data)
+  {
+    if (conn->getProtocol()->hasHandler(Netpp::EventType::DATA))
+    {
+      ConnectionWeakPtr weak{conn};
+      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+        if (auto conn = weak.lock())
+        {
+          conn->getProtocol()->handle(conn, std::move(data));
+        }
+      });
+    }
+  }
+
+  void handleError(ConnectionPtr conn)
+  {
+    if (conn->getProtocol()->hasHandler(Netpp::EventType::ERROR))
+    {
+      DataEvent data{.eventType = Netpp::EventType::ERROR};
+      ConnectionWeakPtr weak{conn};
+      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+        if (auto conn = weak.lock())
+        {
+          conn->getProtocol()->handle(conn, std::move(data));
+        }
+      });
+    }
+  }
+
   bool sendNow(ConnectionPtr conn, DataEvent &data)
   {
     if (data.buffer.empty())
@@ -284,7 +301,7 @@ private:
     {
       auto len = Socket::send(conn->getId(), data.buffer.data() + data.sent, data.buffer.size() - data.sent, 0);
       auto err = errno;
-      logger(TCP, LogLevel::DEBUG, conn->getId(), len, data.close);
+      logger(TCP, LogLevel::DEBUG, conn->getId(), len, data.eventType);
       if (len < 0)
       {
         if (err == EAGAIN || err == EWOULDBLOCK)
@@ -293,8 +310,8 @@ private:
           return false;
         }
         logger(TCP, LogLevel::ERROR, conn->getId(), len, err, ::strerror(err));
-        data.close = true;              // mark for close
-        data.sent = data.buffer.size(); // mark as "done" so close triggers
+        data.eventType = EventType::DISCONNECT; // mark for error
+        data.sent = data.buffer.size();         // mark as "done" so error triggers
         return true;
       }
       else

@@ -25,6 +25,7 @@ public:
 
   HttpProtocol(Core::TcpHandler *server) : _server(server)
   {
+    on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
   }
 
   virtual ~HttpProtocol()
@@ -47,15 +48,11 @@ public:
     return req;
   }
 
-  void onReceive(ConnectionPtr conn, DataEvent data) override
+private:
+  void handleData(ConnectionPtr conn, const DataEvent &data)
   {
     auto s = conn->getId();
     logger(HTTP, LogLevel::DEBUG, s, data.buffer.size());
-
-    if (data.connect || data.disconnect)
-    {
-      return;
-    }
 
     HttpRequestPtr req = getRequest(conn);
     try
@@ -89,7 +86,6 @@ public:
     }
   }
 
-private:
   HttpResponse initResponse(HttpRequest &req)
   {
     HttpResponse res;
@@ -122,7 +118,7 @@ private:
       size_t totalSize = headers_str.size() + res.body.size();
       if (totalSize <= 4096)
       {
-        DataEvent data{DataEvent::Buffer(totalSize), true};
+        DataEvent data{DataEvent::Buffer(totalSize), EventType::DISCONNECT};
         std::copy(headers_str.begin(), headers_str.end(), data.buffer.data());
         std::copy(res.body.begin(), res.body.end(), data.buffer.data() + headers_str.size());
         logger(HTTP, LogLevel::DEBUG, "headers+body", data.buffer.size());
@@ -134,7 +130,7 @@ private:
         logger(HTTP, LogLevel::DEBUG, "headers", hdr.buffer.size());
         _server->send(conn, std::move(hdr));
 
-        DataEvent body{DataEvent::Buffer(res.body.begin(), res.body.end()), true};
+        DataEvent body{DataEvent::Buffer(res.body.begin(), res.body.end()), EventType::DISCONNECT};
         logger(HTTP, LogLevel::DEBUG, "body", body.buffer.size());
         _server->send(conn, std::move(body));
       }
