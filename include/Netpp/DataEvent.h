@@ -13,6 +13,7 @@ struct DataEvent
   Buffer buffer;
   bool close = false;
   bool connect = false;
+  bool disconnect = false;
   size_t sent = 0;
 };
 

@@ -89,6 +89,18 @@ public:
   {
     logger(TCP, LogLevel::DEBUG, s);
     _connecting.erase(s);
+
+    auto it = _connections.find(s);
+    if (it != _connections.end())
+    {
+      auto conn = it->second;
+      conn->setClosed(true);
+      DataEvent disconnect{.buffer = DataEvent::Buffer(), .disconnect = true};
+      _dispatcher->post(conn, [conn, disconnect = std::move(disconnect)]() mutable {
+        conn->getProtocol()->onReceive(conn, std::move(disconnect));
+      });
+    }
+
     close(s);
   }
 
@@ -146,6 +158,10 @@ public:
       {
         logger(TCP, LogLevel::WARN, s, "closed by peer");
         conn->setClosed(true);
+        DataEvent disconnect{.buffer = DataEvent::Buffer(), .disconnect = true};
+        _dispatcher->post(conn, [conn, disconnect = std::move(disconnect)]() mutable {
+          conn->getProtocol()->onReceive(conn, std::move(disconnect));
+        });
         close(s);
       }
       else if (err == EAGAIN || err == EWOULDBLOCK)
@@ -156,6 +172,10 @@ public:
       {
         logger(TCP, LogLevel::ERROR, "recv:error", s, len, err, ::strerror(err));
         conn->setClosed(true);
+        DataEvent disconnect{.buffer = DataEvent::Buffer(), .disconnect = true};
+        _dispatcher->post(conn, [conn, disconnect = std::move(disconnect)]() mutable {
+          conn->getProtocol()->onReceive(conn, std::move(disconnect));
+        });
         close(s);
       }
       return;

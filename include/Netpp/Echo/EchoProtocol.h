@@ -27,14 +27,14 @@ public:
 
   void onReceive(ConnectionPtr conn, DataEvent data) override
   {
-    if (data.connect)
+    if (data.connect || data.disconnect)
     {
       return;
     }
 
     auto str = std::string(data.buffer.begin(), data.buffer.end());
 
-    bool close = str.starts_with("close");
+    bool close = str.starts_with("close") || str.starts_with("exit") || str.starts_with("quit");
     bool infinite = str.starts_with("inf");
 
     DataEvent resp{.buffer = DataEvent::Buffer(str.begin(), str.end()), .close = close};

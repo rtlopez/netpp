@@ -37,7 +37,10 @@ public:
 
   void onReceive(ConnectionPtr conn, DataEvent data) override
   {
-    auto str = std::string(data.buffer.begin(), data.buffer.end());
+    if (data.disconnect)
+    {
+      return;
+    }
 
     if (data.connect)
     {
@@ -47,6 +50,7 @@ public:
       return;
     }
 
+    auto str = std::string(data.buffer.begin(), data.buffer.end());
     auto clients = _server->getProtocolConnections(this);
     for (const ConnectionWeakPtr &w : clients)
     {

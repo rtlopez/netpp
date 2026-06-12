@@ -52,7 +52,7 @@ public:
     auto s = conn->getId();
     logger(HTTP, LogLevel::DEBUG, s, data.buffer.size());
 
-    if (data.connect)
+    if (data.connect || data.disconnect)
     {
       return;
     }
