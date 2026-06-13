@@ -56,8 +56,11 @@ public:
     if (ret == 0)
     {
       // immediate connect (rare for non-blocking)
+      //_loop->add(s, this);
+      // handleConnect(conn);
+      _connecting.emplace(s);
       _loop->add(s, this);
-      handleConnect(conn);
+      _loop->mod(s, true); // enable EPOLLOUT to detect connect completion
     }
     else
     {

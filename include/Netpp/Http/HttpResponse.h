@@ -1,25 +1,25 @@
 #pragma once
 
-#include <cstdint>
-#include <map>
-#include <sstream>
+#include <charconv>
 #include <string>
-#include <vector>
 
 #include "Netpp/DataEvent.h"
+#include "Netpp/Http/HttpMessage.h"
 #include "Netpp/MoveOnlyFunction.h"
 
 namespace Netpp::Http
 {
 
-class HttpResponse
+class HttpResponse : public HttpMessage
 {
 public:
-  std::string version = "0.9";
   int status = 404;
-  std::map<std::string, std::string> headers;
-  std::vector<uint8_t> body;
   MoveOnlyFunction<DataEvent(void)> generator;
+
+  HttpResponse()
+  {
+    version = "0.9";
+  }
 
   void setBody(std::vector<uint8_t> content)
   {
@@ -39,19 +39,6 @@ public:
   void setGenerator(MoveOnlyFunction<DataEvent(void)> gen)
   {
     generator = std::move(gen);
-  }
-
-  const std::string str() const
-  {
-    std::ostringstream ss;
-    ss << "HTTP/" << version << ' ' << status << ' ' << codeToMessage(status) << "\r\n";
-    for (const auto &[key, val] : headers)
-    {
-      ss << key << ": " << val << "\r\n";
-    }
-    ss << "\r\n";
-
-    return std::move(ss).str();
   }
 
   static const char *codeToMessage(int code)
@@ -113,6 +100,46 @@ public:
       return "Gateway Timeout";
     }
     return "Unknown";
+  }
+
+protected:
+  bool parseStartLine(const std::string &raw, size_t &pos) override
+  {
+    // "HTTP/1.1 200 OK\r\n"
+    size_t lineEnd = raw.find("\r\n", pos);
+    if (lineEnd == std::string::npos)
+    {
+      return false;
+    }
+
+    size_t httpSlash = raw.find('/', pos);
+    if (httpSlash == std::string::npos || httpSlash >= lineEnd)
+    {
+      return false;
+    }
+
+    size_t versionEnd = raw.find(' ', httpSlash + 1);
+    if (versionEnd == std::string::npos || versionEnd >= lineEnd)
+    {
+      return false;
+    }
+    version = raw.substr(httpSlash + 1, versionEnd - httpSlash - 1);
+
+    size_t codeEnd = raw.find(' ', versionEnd + 1);
+    if (codeEnd == std::string::npos || codeEnd >= lineEnd)
+    {
+      return false;
+    }
+    std::string_view codeStr{raw.data() + versionEnd + 1, codeEnd - versionEnd - 1};
+    std::from_chars(codeStr.data(), codeStr.data() + codeStr.size(), status);
+
+    pos = lineEnd + 2;
+    return true;
+  }
+
+  std::string serializeStartLine() const override
+  {
+    return "HTTP/" + version + " " + std::to_string(status) + " " + codeToMessage(status) + "\r\n";
   }
 };
 

@@ -1,14 +1,10 @@
 #pragma once
 
-#include <algorithm>
-#include <charconv>
-#include <map>
 #include <memory>
-#include <sstream>
 #include <string>
-#include <vector>
 
 #include "Netpp/Http/HttpException.h"
+#include "Netpp/Http/HttpMessage.h"
 #include "Netpp/Logger/Logger.h"
 
 namespace Netpp::Http
@@ -17,190 +13,55 @@ using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
 static const char *HTTPR = "http";
 
-class HttpRequest
+class HttpRequest : public HttpMessage
 {
-  enum State
-  {
-    PARSE_METHOD,
-    PARSE_PATH,
-    PARSE_VERSION,
-    PARSE_HEADERS,
-    PARSE_DONE,
-  };
-
 public:
   std::string method;
   std::string path;
-  std::string version;
-  std::map<std::string, std::string> headers;
-  std::vector<char> header;
-  std::vector<char> body;
 
   virtual ~HttpRequest()
   {
     logger(HTTPR, LogLevel::DEBUG, "");
   }
 
-  void receive(const char *c, size_t len)
+protected:
+  bool parseStartLine(const std::string &raw, size_t &pos) override
   {
-    if (!len)
+    // "GET /path HTTP/1.1\r\n"
+    size_t methodEnd = raw.find(' ', pos);
+    if (methodEnd == std::string::npos)
     {
-      return;
+      return false;
     }
-    if (!_headerReceived)
+    method = raw.substr(pos, methodEnd - pos);
+
+    size_t pathEnd = raw.find(' ', methodEnd + 1);
+    if (pathEnd == std::string::npos)
     {
-      std::string s{c, len};
-      size_t pos = s.find("\r\n\r\n");
-      if (!header.size())
-      {
-        header.reserve(1024);
-      }
-      if (pos == std::string::npos)
-      {
-        std::copy(c, c + len, std::back_inserter(header));
-      }
-      else
-      {
-        std::copy(c, c + pos + 4, std::back_inserter(header));
-        _headerReceived = true;
-        if (!parse())
-        {
-          throw HttpException(400);
-        }
-        if (pos + 4 < len)
-        {
-          std::copy(c + pos + 4, c + len, std::back_inserter(body));
-        }
-      }
+      return false;
     }
-    else
+    path = raw.substr(methodEnd + 1, pathEnd - methodEnd - 1);
+
+    size_t versionStart = pathEnd + 6; // skip " HTTP/"
+    size_t versionEnd = raw.find("\r\n", versionStart);
+    if (versionEnd == std::string::npos)
     {
-      std::copy(c, c + len, std::back_inserter(body));
+      return false;
     }
+    version = raw.substr(versionStart, versionEnd - versionStart);
+
+    pos = versionEnd + 2;
+    return true;
   }
 
-  bool parse()
+  std::string serializeStartLine() const override
   {
-    State state = PARSE_METHOD;
-    std::string s{header.begin(), header.end()};
-    size_t from = 0;
-    while (true)
-    {
-      switch (state)
-      {
-      case PARSE_METHOD: {
-        size_t to = s.find(' ', from);
-        if (to == std::string::npos)
-        {
-          return false;
-        }
-        method = s.substr(from, to - from);
-        from = to + 1;
-        state = PARSE_PATH;
-        break;
-      }
-      case PARSE_PATH: {
-        size_t to = s.find(' ', from);
-        if (to == std::string::npos)
-        {
-          return false;
-        }
-        path = s.substr(from, to - from);
-        from = to + 6; // skip " HTTP/" fragment
-        state = PARSE_VERSION;
-        break;
-      }
-      case PARSE_VERSION: {
-        size_t to = s.find("\r\n", from);
-        if (to == std::string::npos)
-        {
-          return false;
-        }
-        version = s.substr(from, to - from);
-        from = to + 2;
-        state = PARSE_HEADERS;
-        break;
-      }
-      case PARSE_HEADERS: {
-        size_t to = s.find("\r\n", from);
-        if (to == std::string::npos)
-        {
-          return false;
-        }
-        if (from == to)
-        {
-          state = PARSE_DONE;
-          _headerParsed = true;
-          break;
-        }
-        std::string line = s.substr(from, to - from);
-        size_t cto = line.find(':');
-        if (cto == std::string::npos)
-        {
-          return false;
-        }
-        std::string key = _trim(line.substr(0, cto));
-        std::string val = _trim(line.substr(cto + 1));
-        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-        headers[key] = val;
-        if (key == "content-length")
-        {
-          std::from_chars(val.data(), val.data() + val.size(), _expectedBodySize);
-          if (_expectedBodySize > 0)
-          {
-            body.reserve(std::min(_expectedBodySize, 128ul * 1024));
-          }
-        }
-        from = to + 2;
-        break;
-      }
-      case PARSE_DONE:
-        return true;
-        break;
-      }
-    }
-    return false;
+    return method + " " + path + " HTTP/" + version + "\r\n";
   }
 
-  const std::string str() const
+  void onParseError() override
   {
-    std::ostringstream ss;
-
-    ss << method << ' ' << path << " HTTP/" << version << "\r\n";
-    for (const auto &[key, val] : headers)
-    {
-      ss << key << ": " << val << "\r\n";
-    }
-    ss << "\r\n";
-
-    return ss.str();
-  }
-
-  bool headerReceived() const
-  {
-    return _headerReceived;
-  }
-
-  bool headerParsed() const
-  {
-    return _headerParsed;
-  }
-
-  bool bodyReceived() const
-  {
-    return body.size() == _expectedBodySize;
-  }
-
-private:
-  size_t _expectedBodySize = 0;
-  bool _headerReceived = false;
-  bool _headerParsed = false;
-
-  static std::string _trim(std::string str)
-  {
-    str.erase(str.find_last_not_of(' ') + 1); // suffixing spaces
-    str.erase(0, str.find_first_not_of(' ')); // prefixing spaces
-    return str;
+    throw HttpException(400);
   }
 };
 

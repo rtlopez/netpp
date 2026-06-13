@@ -150,8 +150,8 @@ public:
   {
     // fastest exception-free block memory write to stdout
     std::scoped_lock lock(_mutex);
-    std::cout.write(message.data(), message.size());
-    std::cout.flush();
+    std::cerr.write(message.data(), message.size());
+    std::cerr.flush();
   }
 
 private:

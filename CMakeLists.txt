@@ -38,9 +38,13 @@ add_executable(server src/server.cpp)
 target_link_libraries(server PRIVATE ${NETPP_LIBS})
 target_link_options(server PRIVATE -rdynamic)
 
-# client example
+# tcp client example
 add_executable(client src/client.cpp)
 target_link_libraries(client PRIVATE ${NETPP_LIBS})
+
+# http client example
+add_executable(http_client src/http_client.cpp)
+target_link_libraries(http_client PRIVATE ${NETPP_LIBS})
 
 ## unit tests
 ## https://cliutils.gitlab.io/modern-cmake/testing/

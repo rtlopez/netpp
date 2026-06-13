@@ -59,7 +59,7 @@ private:
     {
       req->receive(reinterpret_cast<const char *>(data.buffer.data()), data.buffer.size());
 
-      if (req->headerParsed() && req->bodyReceived())
+      if (req->complete())
       {
         HttpResponse res = initResponse(*req);
         if (_middleware)

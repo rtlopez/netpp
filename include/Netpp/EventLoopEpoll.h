@@ -150,6 +150,11 @@ public:
       {
         handle(_events[i]);
       }
+
+      // if (!hasHandlers())
+      // {
+      //   break;
+      // }
     }
   }
 
@@ -229,6 +234,12 @@ public:
       return;
     }
     _handlers[fd] = nullptr;
+  }
+
+  bool hasHandlers()
+  {
+    std::scoped_lock lock(_handlersMutex);
+    return !_handlers.empty();
   }
 
   void stop() override
