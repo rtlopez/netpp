@@ -31,6 +31,7 @@ set(NETPP_LIBS
     netpp_http
     netpp_echo
     netpp_chat
+    netpp_dns
 )
 
 # server example
@@ -45,6 +46,10 @@ target_link_libraries(client PRIVATE ${NETPP_LIBS})
 # http client example
 add_executable(http_client src/http_client.cpp)
 target_link_libraries(http_client PRIVATE ${NETPP_LIBS})
+
+# dns client example
+add_executable(dns_client src/dns_client.cpp)
+target_link_libraries(dns_client PRIVATE ${NETPP_LIBS})
 
 ## unit tests
 ## https://cliutils.gitlab.io/modern-cmake/testing/

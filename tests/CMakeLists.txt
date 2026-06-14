@@ -14,6 +14,10 @@ target_link_libraries(HttpMessageTest GTest::gtest_main netpp_logger)
 add_executable(RingBufferTest RingBufferTest.cpp)
 target_link_libraries(RingBufferTest GTest::gtest_main)
 
+add_executable(DnsParserTest DnsParserTest.cpp)
+target_link_libraries(DnsParserTest GTest::gtest_main netpp_dns)
+
 include(GoogleTest)
 gtest_discover_tests(HttpMessageTest)
 gtest_discover_tests(RingBufferTest)
+gtest_discover_tests(DnsParserTest)

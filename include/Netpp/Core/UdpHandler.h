@@ -38,6 +38,25 @@ public:
     _loop->add(s, this);
   }
 
+  /// Register a pre-created socket with the event loop for receiving.
+  void listen(sock_t s, Protocol *protocol)
+  {
+    logger(UDP, LogLevel::DEBUG, s);
+    _listeners.emplace(s, protocol);
+    _loop->add(s, this);
+  }
+
+  /// Open an unbound UDP socket for client use and register it for receiving.
+  /// The OS assigns an ephemeral port on first sendto.
+  sock_t open(Protocol *protocol)
+  {
+    sock_t s = Socket::create(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
+    logger(UDP, LogLevel::DEBUG, s);
+    _listeners.emplace(s, protocol);
+    _loop->add(s, this);
+    return s;
+  }
+
   virtual ~UdpHandler()
   {
     logger(UDP, LogLevel::DEBUG, _listeners.size());
@@ -58,7 +77,7 @@ public:
     auto lsi = _listeners.find(s);
     if (lsi == _listeners.end())
     {
-      logger(UDP, LogLevel::WARN, "unknown", s);
+      logger(UDP, LogLevel::WARN, s, "unknown");
       return;
     }
 
@@ -68,7 +87,7 @@ public:
     auto len = Socket::recvfrom(s, data.buffer.data(), data.buffer.size(), 0, addr);
     auto err = errno;
 
-    logger(UDP, LogLevel::DEBUG, "recvfrom", s, len);
+    logger(UDP, LogLevel::DEBUG, s, "recvfrom", len);
 
     if (len > 0)
     {
@@ -78,7 +97,7 @@ public:
     }
     else if (len < 0 && err != EAGAIN && err != EWOULDBLOCK)
     {
-      logger(UDP, LogLevel::ERROR, "recvfrom:error", s, len, err, ::strerror(err));
+      logger(UDP, LogLevel::ERROR, s, "recvfrom:error", len, err, ::strerror(err));
     }
   }
 
@@ -95,10 +114,10 @@ public:
 
     auto len = Socket::sendto(conn->getId(), data.buffer.data(), data.buffer.size(), 0, conn->getPeerAddr());
     auto err = errno;
-    logger(UDP, LogLevel::DEBUG, "sendto", conn->getId(), len);
+    logger(UDP, LogLevel::DEBUG, conn->getId(), "sendto", len);
     if (len < 0 && err != EAGAIN && err != EWOULDBLOCK)
     {
-      logger(UDP, LogLevel::ERROR, "sendto:error", conn->getId(), len, err, ::strerror(err));
+      logger(UDP, LogLevel::ERROR, conn->getId(), "sendto:error", len, err, ::strerror(err));
     }
   }
 
