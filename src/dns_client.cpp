@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
   auto logHandler = std::make_unique<Netpp::Logger::LogHandlerSimple>(
       std::make_unique<Netpp::Logger::LogFormatterSimple>(), std::make_unique<Netpp::Logger::LogWriterConsole>());
   Netpp::Logger::Logger::getInstance()->addHandler(std::move(logHandler));
-  Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::DEBUG);
+  Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::WARN);
 
   Netpp::EventLoopEpoll loop;
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
@@ -29,6 +29,7 @@ int main(int argc, char *argv[])
 
   Netpp::Dns::DnsProtocol dns{&udpHandler, ns};
 
+  auto start = std::chrono::steady_clock::now();
   auto future = dns.resolve(name, Netpp::Dns::DnsType::A);
 
   std::thread loopThread([&loop]() { loop.run(); });
@@ -44,7 +45,8 @@ int main(int argc, char *argv[])
 
     for (const auto &answer : response.answers)
     {
-      std::cout << "  " << answer.name << "  " << Netpp::Dns::typeToString(answer.type) << "  TTL=" << answer.ttl;
+      std::cout << "  " << answer.name << "  " << answer.ttl << "  " << Netpp::Dns::classToString(answer.cls) << "  "
+                << Netpp::Dns::typeToString(answer.type);
       if (answer.type == Netpp::Dns::DnsType::A)
       {
         std::cout << "  " << answer.rdataAsIPv4();
@@ -65,8 +67,11 @@ int main(int argc, char *argv[])
     std::cerr << "DNS query timed out\n";
   }
 
+  auto end = std::chrono::steady_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  std::cout << "Query time: " << duration.count() << " ms\n";
+
   loop.stop();
-  kill(getpid(), SIGTERM); // wake epoll so the loop thread exits
   loopThread.join();
   dispatcher.stop();
 

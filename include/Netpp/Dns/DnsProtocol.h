@@ -131,7 +131,7 @@ private:
     DataEvent ev{.buffer = std::move(wire)};
     _handler->send(conn, std::move(ev));
 
-    logger(DNS, LogLevel::DEBUG, "query sent", _sock);
+    logger(DNS, LogLevel::DEBUG, _sock);
   }
 
   uint16_t generateId()

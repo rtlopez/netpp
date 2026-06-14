@@ -92,6 +92,16 @@ inline const char *typeToString(DnsType type)
   return "Unknown";
 }
 
+inline const char *classToString(DnsClass cls)
+{
+  switch (cls)
+  {
+  case DnsClass::IN:
+    return "IN";
+  }
+  return "Unknown";
+}
+
 // DNS message header (RFC 1035, Section 4.1.1)
 struct DnsHeader
 {

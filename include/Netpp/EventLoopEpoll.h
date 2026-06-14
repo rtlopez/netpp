@@ -1,8 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <mutex>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <vector>
 
 #include "EventLoop.h"
@@ -24,26 +26,35 @@ class EventLoopEpoll : public EventLoop
 public:
   EventLoopEpoll() : _fd(-1), _running(true), _timeout(-1), _handlers(1024)
   {
-    sock_t fd = ::epoll_create1(0);
-    int err = errno;
+    _fd = ::epoll_create1(0);
 
-    logger(EPOLL, LogLevel::TRACE, fd);
-
-    if (fd < 0)
+    if (_fd < 0)
     {
+      int err = errno;
+      logger(EPOLL, LogLevel::ERROR, _fd, err, ::strerror(err));
       throw EventLoopException(err, "epoll_create1() failed");
     }
 
-    _fd = fd;
+    _wake_fd = ::eventfd(0, EFD_NONBLOCK);
+
+    if (_wake_fd < 0)
+    {
+      auto err = errno;
+      logger(EPOLL, LogLevel::ERROR, _wake_fd, err, ::strerror(err));
+      throw EventLoopException(err, "eventfd() failed");
+    }
+
+    logger(EPOLL, LogLevel::TRACE, _fd, _wake_fd);
+
+    add(_wake_fd, nullptr);
   }
 
   virtual ~EventLoopEpoll()
   {
-    logger(EPOLL, LogLevel::TRACE, _fd);
-    if (_fd >= 0)
-    {
-      ::close(_fd);
-    }
+    logger(EPOLL, LogLevel::TRACE, _fd, _wake_fd);
+    del(_wake_fd);
+    ::close(_wake_fd);
+    ::close(_fd);
   }
 
   void add(sock_t fd, EventLoopHandler *handler) override
@@ -125,7 +136,7 @@ public:
       throw EventLoopException(-1, "EventLoopEpoll not initialized");
     }
 
-    while (_running)
+    while (_running.load(std::memory_order_relaxed))
     {
       int ret = ::epoll_wait(_fd, _events, MAX_EVENTS, _timeout);
       if (ret == -1)
@@ -160,6 +171,13 @@ public:
 
   void handle(const epoll_event &ev)
   {
+    if (ev.data.fd == _wake_fd)
+    {
+      uint64_t val;
+      ::read(_wake_fd, &val, sizeof(val));
+      return;
+    }
+
     auto handler = getHandler(ev.data.fd);
     logger(EPOLL, LogLevel::TRACE, ev.data.fd, ev.events, !!handler);
     if (!handler)
@@ -244,13 +262,22 @@ public:
 
   void stop() override
   {
-    _running = false;
+    _running.store(false, std::memory_order_relaxed);
+    wake();
+  }
+
+  void wake()
+  {
+    uint64_t val = 1;
+    ::write(_wake_fd, &val, sizeof(val));
+    logger(EPOLL, LogLevel::TRACE, "");
   }
 
 private:
   static const size_t MAX_EVENTS = 64;
-  sock_t _fd;
-  volatile bool _running;
+  int _fd;
+  int _wake_fd;
+  std::atomic<bool> _running;
   int _timeout;
   epoll_event _events[MAX_EVENTS];
   std::vector<EventLoopHandler *> _handlers;
