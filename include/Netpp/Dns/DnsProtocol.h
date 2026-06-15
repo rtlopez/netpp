@@ -52,12 +52,12 @@ public:
     }
 
     on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { onData(conn, data); });
-    _sock = _handler->open(this);
+    _conn = _handler->openConnection(this);
   }
 
   virtual ~DnsProtocol()
   {
-    _handler->unregister(_sock);
+    _handler->unregister(_conn);
 
     std::unordered_map<uint16_t, std::shared_ptr<QueryContext>> pending;
     {
@@ -188,16 +188,11 @@ private:
 
   void sendQuery(std::vector<uint8_t> wire)
   {
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(_port);
-    addr.sin_addr.s_addr = inet_addr(_nameserver);
+    auto conn = _handler->createConnection(_conn, this, _nameserver, _port);
+    DataEvent data{.buffer = std::move(wire)};
+    _handler->send(conn, std::move(data));
 
-    auto conn = std::make_shared<Connection>(_sock, this, addr, false);
-    DataEvent ev{.buffer = std::move(wire)};
-    _handler->send(conn, std::move(ev));
-
-    logger(DNS, LogLevel::DEBUG, _sock);
+    logger(DNS, LogLevel::DEBUG, conn->getId());
   }
 
   uint16_t generateIdLocked()
@@ -223,7 +218,7 @@ private:
   const char *_nameserver;
   uint16_t _port;
   std::chrono::milliseconds _queryTimeout;
-  sock_t _sock = -1;
+  ConnectionPtr _conn;
   std::mt19937 _rng;
 
   std::mutex _pendingMutex;

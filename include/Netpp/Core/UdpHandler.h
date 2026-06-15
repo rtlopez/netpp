@@ -32,18 +32,8 @@ public:
   void listen(const char *addr, uint16_t port, Protocol *protocol)
   {
     logger(UDP, LogLevel::DEBUG, addr, port);
-    sock_t s = Socket::create(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
+    sock_t s = open(protocol);
     Socket::bind(s, addr, port);
-    _listeners.emplace(s, protocol);
-    _loop->add(s, this);
-  }
-
-  /// Register a pre-created socket with the event loop for receiving.
-  void listen(sock_t s, Protocol *protocol)
-  {
-    logger(UDP, LogLevel::DEBUG, s);
-    _listeners.emplace(s, protocol);
-    _loop->add(s, this);
   }
 
   /// Open an unbound UDP socket for client use and register it for receiving.
@@ -57,8 +47,9 @@ public:
     return s;
   }
 
-  void unregister(sock_t s)
+  void unregister(ConnectionPtr conn)
   {
+    auto s = conn->getId();
     logger(UDP, LogLevel::DEBUG, s);
     auto lsi = _listeners.find(s);
     if (lsi != _listeners.end())
@@ -67,6 +58,27 @@ public:
       _loop->del(s);
       Socket::close(s);
     }
+  }
+
+  ConnectionPtr openConnection(Protocol *protocol)
+  {
+    sock_t s = open(protocol);
+    return std::make_shared<Connection>(s, protocol, sockaddr_in{}, false);
+  }
+
+  ConnectionPtr createConnection(ConnectionPtr conn, Protocol *protocol, const std::string &peerAddr, uint16_t port)
+  {
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = inet_addr(peerAddr.c_str());
+
+    return createConnection(conn, protocol, addr);
+  }
+
+  ConnectionPtr createConnection(ConnectionPtr conn, Protocol *protocol, const sockaddr_in &peerAddr)
+  {
+    return std::make_shared<Connection>(conn->getId(), protocol, peerAddr, false);
   }
 
   virtual ~UdpHandler()
