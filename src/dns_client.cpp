@@ -16,7 +16,28 @@
 int main(int argc, char *argv[])
 {
   const char *name = argc > 1 ? argv[1] : "example.com";
-  const char *ns = argc > 2 ? argv[2] : "8.8.8.8";
+  const char *record = argc > 2 ? argv[2] : "a";
+  const char *ns = argc > 3 ? argv[3] : "127.0.0.53";
+
+  auto stringToDnsType = [](const std::string &typeStr) -> Netpp::Dns::DnsType {
+    std::string lower = typeStr;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+    // clang-format off
+    if (lower == "a") return Netpp::Dns::DnsType::A;
+    if (lower == "aaaa") return Netpp::Dns::DnsType::AAAA;
+    if (lower == "cname") return Netpp::Dns::DnsType::CNAME;
+    if (lower == "mx") return Netpp::Dns::DnsType::MX;
+    if (lower == "ns") return Netpp::Dns::DnsType::NS;
+    if (lower == "txt") return Netpp::Dns::DnsType::TXT;
+    if (lower == "soa") return Netpp::Dns::DnsType::SOA;
+    if (lower == "ptr") return Netpp::Dns::DnsType::PTR;
+    if (lower == "srv") return Netpp::Dns::DnsType::SRV;
+    return Netpp::Dns::DnsType::A; // default to A
+    // clang-format on
+  };
+
+  Netpp::Dns::DnsType type = stringToDnsType(record);
 
   auto logHandler = std::make_unique<Netpp::Logger::LogHandlerSimple>(
       std::make_unique<Netpp::Logger::LogFormatterSimple>(), std::make_unique<Netpp::Logger::LogWriterConsole>());
@@ -32,7 +53,7 @@ int main(int argc, char *argv[])
   Netpp::Dns::DnsProtocol dns{&udpHandler, &timer, ns};
 
   auto start = std::chrono::steady_clock::now();
-  auto future = dns.resolve(name, Netpp::Dns::DnsType::A);
+  auto future = dns.resolve(name, type);
 
   std::thread loopThread([&loop]() { loop.run(); });
 
@@ -44,12 +65,19 @@ int main(int argc, char *argv[])
       auto response = future.get();
 
       std::cout << "DNS response for: " << name << "\n";
-      std::cout << "  Status: " << Netpp::Dns::rcodeToString(response.header.rcode) << "\n";
-      std::cout << "  Answers: " << response.answers.size() << "\n";
+      std::cout << "Status: " << Netpp::Dns::rcodeToString(response.header.rcode) << ", ";
+      std::cout << "Answers: " << response.answers.size() << "\n";
+
+      size_t nameLen = 8;
+      for (const auto &answer : response.answers)
+      {
+        nameLen = std::max(nameLen, answer.name.size());
+      }
 
       for (const auto &answer : response.answers)
       {
-        std::cout << "  " << answer.name << "  " << answer.ttl << "  " << Netpp::Dns::classToString(answer.cls) << "  "
+        std::cout << std::setw(nameLen + 2) << std::right << answer.name << "  " << answer.ttl << "  "
+                  << Netpp::Dns::classToString(answer.cls) << "  " << std::setw(5)
                   << Netpp::Dns::typeToString(answer.type);
         if (answer.type == Netpp::Dns::DnsType::A)
         {
@@ -78,7 +106,7 @@ int main(int argc, char *argv[])
 
   auto end = std::chrono::steady_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-  std::cout << "Query time: " << duration.count() << " ms\n";
+  std::cout << "Query time: " << duration.count() << " ms, Server: " << ns << "\n";
 
   loop.stop();
   loopThread.join();
