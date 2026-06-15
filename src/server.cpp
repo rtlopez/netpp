@@ -82,10 +82,10 @@ struct CliArgs
           .choices("trace", "debug", "info", "warn", "error");
     // clang-format on
 
-    parseResult = cli.parse({argc, argv});
-    if (!parseResult)
+    auto result = cli.parse({argc, argv});
+    if (!result)
     {
-      std::cerr << "CLI error: " << parseResult.message() << '\n';
+      std::cerr << "CLI error: " << result.message() << '\n';
       std::cerr << cli << '\n';
       exit(1);
     }
@@ -127,9 +127,6 @@ struct CliArgs
   int workerThreads = 16;
   std::string logLevelName = "info";
   LogLevel logLevel = LogLevel::INFO;
-
-private:
-  lyra::parse_result parseResult{lyra::result::error("Not parsed yet")};
 };
 
 int main(int argc, const char **argv)
@@ -193,7 +190,7 @@ int main(int argc, const char **argv)
     ss << "<html>\n<head><title>Big Response</title></head>\n<body><h1>Big Response</h1><p>\n";
     for (int i = 1; i <= 50000; i++)
     {
-      ss << " 0x" << std::hex << i << " " << std::dec << i << " ";
+      ss << " 0x" << std::hex << i << " " << std::dec << std::setw(5) << std::setfill('0') << i << " ";
       if (i % 12 == 0)
       {
         ss << "\n";

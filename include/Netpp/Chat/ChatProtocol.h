@@ -36,10 +36,7 @@ public:
 private:
   void handleConnect(ConnectionPtr conn)
   {
-    {
-      std::unique_lock lock(_clientsMutex);
-      _clients[conn->getId()] = ConnectionWeakPtr{conn};
-    }
+    addClient(conn);
 
     std::string welcome = "Welcome to the chat room\n";
     _server->send(conn, {.buffer = {welcome.begin(), welcome.end()}});
@@ -50,10 +47,7 @@ private:
 
   void handleDisconnect(ConnectionPtr conn)
   {
-    {
-      std::unique_lock lock(_clientsMutex);
-      _clients.erase(conn->getId());
-    }
+    removeClient(conn);
 
     std::string leaveMsg = "A user has left the chat " + conn->getPeerName() + "\n";
     broadcast(conn, leaveMsg);
@@ -101,6 +95,18 @@ private:
       }
     }
     return clients;
+  }
+
+  void addClient(ConnectionPtr conn)
+  {
+    std::unique_lock lock(_clientsMutex);
+    _clients[conn->getId()] = ConnectionWeakPtr{conn};
+  }
+
+  void removeClient(ConnectionPtr conn)
+  {
+    std::unique_lock lock(_clientsMutex);
+    _clients.erase(conn->getId());
   }
 
   TransportHandler *_server;
