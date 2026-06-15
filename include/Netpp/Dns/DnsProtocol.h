@@ -1,9 +1,12 @@
 #pragma once
 
+#include <chrono>
+#include <exception>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 
@@ -14,6 +17,7 @@
 #include "Netpp/Dns/DnsParser.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
+#include "Netpp/TimerScheduler.h"
 
 namespace Netpp::Dns
 {
@@ -27,7 +31,7 @@ using Logger::LogLevel;
 /// protocols (e.g. HTTP).
 ///
 /// Usage:
-///   DnsProtocol dns{&udpHandler, "8.8.8.8"};
+///   DnsProtocol dns{&udpHandler, &timer, "8.8.8.8"};
 ///   auto future = dns.resolve("example.com");
 ///   // ... event loop running ...
 ///   DnsMessage response = future.get();
@@ -37,35 +41,66 @@ class DnsProtocol : public Protocol
 public:
   static constexpr const char *DNS = "dns";
 
-  DnsProtocol(Core::UdpHandler *handler, const char *nameserver = "8.8.8.8", uint16_t port = 53)
-      : _handler(handler), _nameserver(nameserver), _port(port), _rng(std::random_device{}())
+  DnsProtocol(Core::UdpHandler *handler, TimerScheduler *timer, const char *nameserver = "8.8.8.8", uint16_t port = 53,
+              std::chrono::milliseconds queryTimeout = std::chrono::seconds(5))
+      : _handler(handler), _timer(timer), _nameserver(nameserver), _port(port), _queryTimeout(queryTimeout),
+        _rng(std::random_device{}())
   {
+    if (!_handler || !_timer)
+    {
+      throw std::invalid_argument("DnsProtocol requires non-null udp handler and timer scheduler");
+    }
+
     on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { onData(conn, data); });
     _sock = _handler->open(this);
   }
 
   virtual ~DnsProtocol()
   {
+    _handler->unregister(_sock);
+
+    std::unordered_map<uint16_t, std::shared_ptr<QueryContext>> pending;
+    {
+      std::lock_guard lock(_pendingMutex);
+      pending.swap(_pending);
+    }
+
+    for (auto &[id, ctx] : pending)
+    {
+      if (ctx->timerToken != TimerScheduler::INVALID_TIMER)
+      {
+        _timer->cancelTimer(ctx->timerToken);
+      }
+
+      if (!ctx->fulfilled)
+      {
+        ctx->fulfilled = true;
+        ctx->promise.set_exception(std::make_exception_ptr(std::runtime_error("dns resolver stopped")));
+      }
+    }
   }
 
   /// Resolve a domain name. Returns a future holding the full DNS response.
   /// The caller must ensure the event loop is running.
   std::future<DnsMessage> resolve(const std::string &name, DnsType type = DnsType::A)
   {
-    uint16_t id = generateId();
+    auto ctx = std::make_shared<QueryContext>();
+    uint16_t id = 0;
+
+    {
+      std::lock_guard lock(_pendingMutex);
+      id = generateIdLocked();
+      _pending[id] = ctx;
+    }
+
     auto msg = DnsMessage::query(name, type, id);
 
     logger(DNS, LogLevel::DEBUG, name, typeToString(type), id);
 
-    auto ctx = std::make_shared<QueryContext>();
     ctx->name = name;
     ctx->type = type;
     auto future = ctx->promise.get_future();
-
-    {
-      std::lock_guard lock(_pendingMutex);
-      _pending[id] = ctx;
-    }
+    ctx->timerToken = _timer->scheduleTimer(_queryTimeout, [this, id]() { onTimeout(id); });
 
     auto wire = DnsParser::serialize(msg);
     sendQuery(std::move(wire));
@@ -80,7 +115,33 @@ private:
     DnsType type;
     std::promise<DnsMessage> promise;
     bool fulfilled = false;
+    TimerScheduler::TimerToken timerToken = TimerScheduler::INVALID_TIMER;
   };
+
+  void onTimeout(uint16_t id)
+  {
+    std::shared_ptr<QueryContext> ctx;
+
+    {
+      std::lock_guard lock(_pendingMutex);
+      auto it = _pending.find(id);
+      if (it == _pending.end())
+      {
+        return;
+      }
+
+      ctx = it->second;
+      _pending.erase(it);
+    }
+
+    if (!ctx->fulfilled)
+    {
+      logger(DNS, LogLevel::WARN, "timeout", id, ctx->name, typeToString(ctx->type));
+      ctx->fulfilled = true;
+      ctx->promise.set_exception(
+          std::make_exception_ptr(std::runtime_error("dns query timeout (connect or response)")));
+    }
+  }
 
   void onData(ConnectionPtr /*conn*/, const DataEvent &data)
   {
@@ -106,6 +167,11 @@ private:
         }
         ctx = it->second;
         _pending.erase(it);
+      }
+
+      if (ctx->timerToken != TimerScheduler::INVALID_TIMER)
+      {
+        _timer->cancelTimer(ctx->timerToken);
       }
 
       if (!ctx->fulfilled)
@@ -134,15 +200,29 @@ private:
     logger(DNS, LogLevel::DEBUG, _sock);
   }
 
-  uint16_t generateId()
+  uint16_t generateIdLocked()
   {
+    if (_pending.size() >= 0xFFFF)
+    {
+      throw std::runtime_error("too many pending dns queries");
+    }
+
     std::uniform_int_distribution<uint16_t> dist(1, 0xFFFF);
-    return dist(_rng);
+    for (;;)
+    {
+      auto id = dist(_rng);
+      if (_pending.find(id) == _pending.end())
+      {
+        return id;
+      }
+    }
   }
 
   Core::UdpHandler *_handler;
+  TimerScheduler *_timer;
   const char *_nameserver;
   uint16_t _port;
+  std::chrono::milliseconds _queryTimeout;
   sock_t _sock = -1;
   std::mt19937 _rng;
 

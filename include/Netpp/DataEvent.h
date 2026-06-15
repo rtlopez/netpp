@@ -12,7 +12,8 @@ enum EventType
   CONNECT = 1,
   DISCONNECT = 2,
   ERROR = 3,
-  EVENT_TYPE_COUNT = 4,
+  TIMEOUT = 4,
+  EVENT_TYPE_COUNT = 5,
 };
 
 struct DataEvent

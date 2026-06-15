@@ -5,6 +5,7 @@
 #include <mutex>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <unistd.h>
 #include <vector>
 
 #include "EventLoop.h"
@@ -24,7 +25,7 @@ static const char *EPOLL = "epoll";
 class EventLoopEpoll : public EventLoop
 {
 public:
-  EventLoopEpoll() : _fd(-1), _running(true), _timeout(-1), _handlers(1024)
+  EventLoopEpoll() : _fd(-1), _wake_fd(-1), _running(true), _timeout(-1), _handlers(1024)
   {
     _fd = ::epoll_create1(0);
 
@@ -161,20 +162,37 @@ public:
       {
         handle(_events[i]);
       }
-
-      // if (!hasHandlers())
-      // {
-      //   break;
-      // }
     }
   }
 
+  void stop() override
+  {
+    _running.store(false, std::memory_order_relaxed);
+    wake();
+  }
+
+  void wake()
+  {
+    uint64_t val = 1;
+    auto n = ::write(_wake_fd, &val, sizeof(val));
+    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+    {
+      logger(EPOLL, LogLevel::WARN, "wake:write", errno, ::strerror(errno));
+    }
+    logger(EPOLL, LogLevel::TRACE, "");
+  }
+
+private:
   void handle(const epoll_event &ev)
   {
     if (ev.data.fd == _wake_fd)
     {
       uint64_t val;
-      ::read(_wake_fd, &val, sizeof(val));
+      auto n = ::read(_wake_fd, &val, sizeof(val));
+      if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+      {
+        logger(EPOLL, LogLevel::WARN, "wake:read", errno, ::strerror(errno));
+      }
       return;
     }
 
@@ -254,26 +272,6 @@ public:
     _handlers[fd] = nullptr;
   }
 
-  bool hasHandlers()
-  {
-    std::scoped_lock lock(_handlersMutex);
-    return !_handlers.empty();
-  }
-
-  void stop() override
-  {
-    _running.store(false, std::memory_order_relaxed);
-    wake();
-  }
-
-  void wake()
-  {
-    uint64_t val = 1;
-    ::write(_wake_fd, &val, sizeof(val));
-    logger(EPOLL, LogLevel::TRACE, "");
-  }
-
-private:
   static const size_t MAX_EVENTS = 64;
   int _fd;
   int _wake_fd;

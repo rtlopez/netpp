@@ -57,6 +57,18 @@ public:
     return s;
   }
 
+  void unregister(sock_t s)
+  {
+    logger(UDP, LogLevel::DEBUG, s);
+    auto lsi = _listeners.find(s);
+    if (lsi != _listeners.end())
+    {
+      _listeners.erase(lsi);
+      _loop->del(s);
+      Socket::close(s);
+    }
+  }
+
   virtual ~UdpHandler()
   {
     logger(UDP, LogLevel::DEBUG, _listeners.size());

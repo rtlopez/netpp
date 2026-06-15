@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <future>
 #include <memory>
 #include <string>
@@ -26,7 +27,8 @@ public:
     on(CONNECT, [this](ConnectionPtr conn, const DataEvent &) { onConnect(conn); });
     on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { onData(conn, data); });
     on(DISCONNECT, [this](ConnectionPtr conn, const DataEvent &) { onDisconnect(conn); });
-    // on(ERROR, [this](ConnectionPtr conn, const DataEvent &) { onDisconnect(conn); });
+    on(ERROR, [this](ConnectionPtr conn, const DataEvent &) { onError(conn); });
+    on(TIMEOUT, [this](ConnectionPtr conn, const DataEvent &) { onTimeout(conn); });
   }
 
   /// Initiates an async GET request. Returns a future that will hold the response
@@ -37,16 +39,17 @@ public:
   ///   auto future = protocol.get("example.com", 80, "/index.html");
   ///   // ... event loop is running ...
   ///   HttpResponse response = future.get(); // blocks until response arrives
-  std::future<HttpResponse> get(const char *host, uint16_t port, const std::string &path)
+  std::future<HttpResponse> get(const char *host, uint16_t port, const std::string &path,
+                                std::chrono::milliseconds connectTimeout = std::chrono::seconds(5))
   {
-    logger(HTTPC, LogLevel::DEBUG, host, port, path);
+    logger(HTTPC, LogLevel::DEBUG, host, port, path, connectTimeout.count());
 
     auto ctx = std::make_shared<RequestContext>();
     ctx->host = host;
     ctx->path = path;
     auto future = ctx->promise.get_future();
 
-    auto connWeak = _handler->connect(host, port, this);
+    auto connWeak = _handler->connect(host, port, this, connectTimeout);
     if (auto conn = connWeak.lock())
     {
       conn->setContext(ctx);
@@ -126,6 +129,32 @@ private:
     // With Connection: close, the server closes after sending all data.
     // If headers were parsed, treat whatever we have as the complete response.
     fulfill(ctx);
+  }
+
+  void onError(ConnectionPtr conn)
+  {
+    auto ctx = conn->getContext<RequestContext>();
+    if (!ctx || ctx->fulfilled)
+    {
+      return;
+    }
+
+    ctx->fulfilled = true;
+    ctx->promise.set_exception(std::make_exception_ptr(std::runtime_error("connection error")));
+    logger(HTTPC, LogLevel::WARN, conn->getId(), "error");
+  }
+
+  void onTimeout(ConnectionPtr conn)
+  {
+    auto ctx = conn->getContext<RequestContext>();
+    if (!ctx || ctx->fulfilled)
+    {
+      return;
+    }
+
+    ctx->fulfilled = true;
+    ctx->promise.set_exception(std::make_exception_ptr(std::runtime_error("connection timeout")));
+    logger(HTTPC, LogLevel::WARN, conn->getId(), "timeout");
   }
 
   void fulfill(std::shared_ptr<RequestContext> ctx)

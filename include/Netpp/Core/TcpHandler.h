@@ -1,6 +1,8 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -17,6 +19,7 @@
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/Socket.h"
+#include "Netpp/TimerScheduler.h"
 #include "Netpp/TransportHandler.h"
 
 namespace Netpp::Core
@@ -29,7 +32,8 @@ class TcpHandler : public EventLoopHandler, public TransportHandler
 public:
   static constexpr const char *TCP = "tcp";
 
-  TcpHandler(EventLoop *loop, Dispatcher *dispatcher) : _loop(loop), _dispatcher(dispatcher)
+  TcpHandler(EventLoop *loop, Dispatcher *dispatcher, TimerScheduler *timer = nullptr)
+      : _loop(loop), _dispatcher(dispatcher), _timer(timer)
   {
   }
 
@@ -43,8 +47,14 @@ public:
     _loop->add(s, this);
   }
 
-  ConnectionWeakPtr connect(const char *host, uint16_t port, Protocol *protocol)
+  ConnectionWeakPtr connect(const char *host, uint16_t port, Protocol *protocol,
+                            std::chrono::milliseconds timeout = std::chrono::milliseconds{0})
   {
+    if (timeout.count() > 0 && !_timer)
+    {
+      throw std::logic_error("TcpHandler connect timeout requires TimerScheduler");
+    }
+
     logger(TCP, LogLevel::DEBUG, "connect", host, port);
     sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     sockaddr_in addr;
@@ -52,6 +62,15 @@ public:
 
     auto conn = std::make_shared<Connection>(s, protocol, addr);
     _connections.emplace(s, conn);
+
+    if (timeout.count() > 0)
+    {
+      auto token = _timer->scheduleTimer(timeout, [this, s]() { onConnectTimeout(s); });
+      if (token != TimerScheduler::INVALID_TIMER)
+      {
+        _connectTimeouts.emplace(s, token);
+      }
+    }
 
     if (ret == 0)
     {
@@ -76,6 +95,13 @@ public:
   virtual ~TcpHandler()
   {
     logger(TCP, LogLevel::DEBUG, _listeners.size());
+
+    for (auto &[s, token] : _connectTimeouts)
+    {
+      _timer->cancelTimer(token);
+    }
+    _connectTimeouts.clear();
+
     for (auto &[s, protocol] : _listeners)
     {
       _loop->del(s);
@@ -87,6 +113,7 @@ public:
   {
     logger(TCP, LogLevel::DEBUG, s);
     _connecting.erase(s);
+    cancelConnectTimeout(s);
 
     auto it = _connections.find(s);
     if (it != _connections.end())
@@ -167,6 +194,7 @@ public:
     if (ci != _connecting.end())
     {
       _connecting.erase(ci);
+      cancelConnectTimeout(s);
 
       int so_error = 0;
       socklen_t len = sizeof(so_error);
@@ -175,6 +203,11 @@ public:
       if (so_error != 0)
       {
         logger(TCP, LogLevel::ERROR, "connect:failed", s, so_error, ::strerror(so_error));
+        auto it = _connections.find(s);
+        if (it != _connections.end())
+        {
+          handleError(it->second);
+        }
         close(s);
         return;
       }
@@ -280,6 +313,21 @@ private:
     }
   }
 
+  void handleTimeout(ConnectionPtr conn)
+  {
+    if (conn->getProtocol()->hasHandler(Netpp::EventType::TIMEOUT))
+    {
+      DataEvent data{.eventType = Netpp::EventType::TIMEOUT};
+      ConnectionWeakPtr weak{conn};
+      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+        if (auto conn = weak.lock())
+        {
+          conn->getProtocol()->handle(conn, std::move(data));
+        }
+      });
+    }
+  }
+
   bool sendNow(ConnectionPtr conn, DataEvent &data)
   {
     if (data.buffer.empty())
@@ -316,6 +364,7 @@ private:
   {
     logger(TCP, LogLevel::DEBUG, s);
     _connecting.erase(s);
+    cancelConnectTimeout(s);
     _loop->del(s); // remove from epoll before closing the fd
     auto it = _connections.find(s);
     if (it != _connections.end())
@@ -324,10 +373,47 @@ private:
     }
   }
 
+  void onConnectTimeout(sock_t s)
+  {
+    auto ci = _connecting.find(s);
+    if (ci == _connecting.end())
+    {
+      cancelConnectTimeout(s);
+      return;
+    }
+
+    _connecting.erase(ci);
+    cancelConnectTimeout(s);
+
+    logger(TCP, LogLevel::WARN, "connect:timeout", s);
+
+    auto it = _connections.find(s);
+    if (it != _connections.end())
+    {
+      handleTimeout(it->second);
+    }
+
+    close(s);
+  }
+
+  void cancelConnectTimeout(sock_t s)
+  {
+    auto it = _connectTimeouts.find(s);
+    if (it == _connectTimeouts.end())
+    {
+      return;
+    }
+
+    _timer->cancelTimer(it->second);
+    _connectTimeouts.erase(it);
+  }
+
   EventLoop *_loop;
   Dispatcher *_dispatcher;
+  TimerScheduler *_timer;
   std::unordered_map<sock_t, Protocol *> _listeners;
   std::unordered_map<sock_t, ConnectionPtr> _connections;
+  std::unordered_map<sock_t, TimerScheduler::TimerToken> _connectTimeouts;
   std::unordered_set<sock_t> _connecting; // sockets with async connect in progress
 };
 

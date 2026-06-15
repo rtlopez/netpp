@@ -5,6 +5,7 @@
 
 #include "Netpp/Core/SingleThreadDispatcher.h"
 #include "Netpp/Core/TcpHandler.h"
+#include "Netpp/Core/TimerHandler.h"
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/Http/HttpClientProtocol.h"
 #include "Netpp/Logger/Logger.h"
@@ -23,8 +24,9 @@ int main(int argc, char *argv[])
 
   Netpp::EventLoopEpoll loop;
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
+  Netpp::Core::TimerHandler timers{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
-  Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher};
+  Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timers};
 
   Netpp::Http::HttpClientProtocol http{&tcpHandler};
 
@@ -38,10 +40,17 @@ int main(int argc, char *argv[])
   auto status = future.wait_for(std::chrono::seconds(10));
   if (status == std::future_status::ready)
   {
-    auto response = future.get();
-    std::cout << response.str() << "\n";
-    std::cout.write(reinterpret_cast<const char *>(response.body.data()), response.body.size());
-    std::cout << "\n";
+    try
+    {
+      auto response = future.get();
+      std::cout << response.str() << "\n";
+      std::cout.write(reinterpret_cast<const char *>(response.body.data()), response.body.size());
+      std::cout << "\n";
+    }
+    catch (const std::exception &e)
+    {
+      std::cerr << "request failed: " << e.what() << "\n";
+    }
   }
   else
   {

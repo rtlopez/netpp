@@ -4,6 +4,7 @@
 
 #include "Netpp/Core/SingleThreadDispatcher.h"
 #include "Netpp/Core/TcpHandler.h"
+#include "Netpp/Core/TimerHandler.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/EventLoopHandler.h"
@@ -108,8 +109,9 @@ int main()
 
   Netpp::EventLoopEpoll loop;
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
+  Netpp::Core::TimerHandler timer{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
-  Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher};
+  Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timer};
 
   ClientProtocol protocol{&tcpHandler, &loop};
   StdinHandler stdinHandler{&loop, [&protocol](const std::string &line) { protocol.send(line); }};

@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "Netpp/Core/SingleThreadDispatcher.h"
+#include "Netpp/Core/TimerHandler.h"
 #include "Netpp/Core/UdpHandler.h"
 #include "Netpp/Dns/DnsMessage.h"
 #include "Netpp/Dns/DnsProtocol.h"
@@ -24,10 +25,11 @@ int main(int argc, char *argv[])
 
   Netpp::EventLoopEpoll loop;
   Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
+  Netpp::Core::TimerHandler timer{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
   Netpp::Core::UdpHandler udpHandler{&loop, &dispatcher};
 
-  Netpp::Dns::DnsProtocol dns{&udpHandler, ns};
+  Netpp::Dns::DnsProtocol dns{&udpHandler, &timer, ns};
 
   auto start = std::chrono::steady_clock::now();
   auto future = dns.resolve(name, Netpp::Dns::DnsType::A);
@@ -37,29 +39,36 @@ int main(int argc, char *argv[])
   auto status = future.wait_for(std::chrono::seconds(5));
   if (status == std::future_status::ready)
   {
-    auto response = future.get();
-
-    std::cout << "DNS response for: " << name << "\n";
-    std::cout << "  Status: " << Netpp::Dns::rcodeToString(response.header.rcode) << "\n";
-    std::cout << "  Answers: " << response.answers.size() << "\n";
-
-    for (const auto &answer : response.answers)
+    try
     {
-      std::cout << "  " << answer.name << "  " << answer.ttl << "  " << Netpp::Dns::classToString(answer.cls) << "  "
-                << Netpp::Dns::typeToString(answer.type);
-      if (answer.type == Netpp::Dns::DnsType::A)
+      auto response = future.get();
+
+      std::cout << "DNS response for: " << name << "\n";
+      std::cout << "  Status: " << Netpp::Dns::rcodeToString(response.header.rcode) << "\n";
+      std::cout << "  Answers: " << response.answers.size() << "\n";
+
+      for (const auto &answer : response.answers)
       {
-        std::cout << "  " << answer.rdataAsIPv4();
+        std::cout << "  " << answer.name << "  " << answer.ttl << "  " << Netpp::Dns::classToString(answer.cls) << "  "
+                  << Netpp::Dns::typeToString(answer.type);
+        if (answer.type == Netpp::Dns::DnsType::A)
+        {
+          std::cout << "  " << answer.rdataAsIPv4();
+        }
+        else if (answer.type == Netpp::Dns::DnsType::AAAA)
+        {
+          std::cout << "  " << answer.rdataAsIPv6();
+        }
+        else if (answer.type == Netpp::Dns::DnsType::CNAME)
+        {
+          std::cout << "  " << answer.rdataAsName();
+        }
+        std::cout << "\n";
       }
-      else if (answer.type == Netpp::Dns::DnsType::AAAA)
-      {
-        std::cout << "  " << answer.rdataAsIPv6();
-      }
-      else if (answer.type == Netpp::Dns::DnsType::CNAME)
-      {
-        std::cout << "  " << answer.rdataAsName();
-      }
-      std::cout << "\n";
+    }
+    catch (const std::exception &e)
+    {
+      std::cerr << "DNS query failed: " << e.what() << "\n";
     }
   }
   else
