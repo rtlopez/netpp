@@ -15,6 +15,8 @@
 
 int main(int argc, char *argv[])
 {
+  std::set_terminate(netpp_terminate_handler);
+
   const char *name = argc > 1 ? argv[1] : "example.com";
   const char *record = argc > 2 ? argv[2] : "a";
   const char *ns = argc > 3 ? argv[3] : "127.0.0.53";
@@ -58,56 +60,38 @@ int main(int argc, char *argv[])
 
   std::thread loopThread([&loop]() { loop.run(); });
 
-  auto status = future.wait_for(std::chrono::seconds(5));
-  if (status == std::future_status::ready)
+  try
   {
-    try
+    future.wait();
+
+    auto response = future.get();
+
+    std::cout << "DNS response for: " << name << ", ";
+    std::cout << "Status: " << Netpp::Dns::rcodeToString(response.header.rcode) << "\n\n";
+    std::cout << "Answers(" << response.answers.size() << "):\n";
+
+    size_t nameLen = 1;
+    for (const auto &answer : response.answers)
     {
-      auto response = future.get();
-
-      std::cout << "DNS response for: " << name << "\n";
-      std::cout << "Status: " << Netpp::Dns::rcodeToString(response.header.rcode) << ", ";
-      std::cout << "Answers: " << response.answers.size() << "\n";
-
-      size_t nameLen = 8;
-      for (const auto &answer : response.answers)
-      {
-        nameLen = std::max(nameLen, answer.name.size());
-      }
-
-      for (const auto &answer : response.answers)
-      {
-        std::cout << std::setw(nameLen + 2) << std::right << answer.name << "  " << answer.ttl << "  "
-                  << Netpp::Dns::classToString(answer.cls) << "  " << std::setw(5)
-                  << Netpp::Dns::typeToString(answer.type);
-        if (answer.type == Netpp::Dns::DnsType::A)
-        {
-          std::cout << "  " << answer.rdataAsIPv4();
-        }
-        else if (answer.type == Netpp::Dns::DnsType::AAAA)
-        {
-          std::cout << "  " << answer.rdataAsIPv6();
-        }
-        else if (answer.type == Netpp::Dns::DnsType::CNAME)
-        {
-          std::cout << "  " << answer.rdataAsName();
-        }
-        std::cout << "\n";
-      }
+      nameLen = std::max(nameLen, answer.name.size());
     }
-    catch (const std::exception &e)
+    nameLen++;
+
+    for (const auto &answer : response.answers)
     {
-      std::cerr << "DNS query failed: " << e.what() << "\n";
+      std::cout << std::setw(nameLen) << std::right << answer.name << "  ";
+      std::cout << answer.ttl << "  " << Netpp::Dns::classToString(answer.cls) << "  ";
+      std::cout << std::setw(5) << Netpp::Dns::typeToString(answer.type) << "  " << answer.rdataString << "\n";
     }
   }
-  else
+  catch (const std::exception &e)
   {
-    std::cerr << "DNS query timed out\n";
+    std::cerr << "Error: " << e.what() << "\n";
   }
 
   auto end = std::chrono::steady_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-  std::cout << "Query time: " << duration.count() << " ms, Server: " << ns << "\n";
+  std::cout << "\nQuery time: " << duration.count() << " ms, Server: " << ns << "\n";
 
   loopControl.stop();
   loopThread.join();

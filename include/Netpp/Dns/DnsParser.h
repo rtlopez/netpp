@@ -62,11 +62,11 @@ private:
 
   /// Decode a DNS domain name with pointer compression support (RFC 1035, Section 4.1.4)
   static std::string readName(Reader &reader);
-  static std::string readNameAt(const uint8_t *data, size_t len, size_t offset, int depth);
+  static std::string readTxt(Reader &reader);
 
   static DnsHeader readHeader(Reader &reader);
   static DnsQuestion readQuestion(Reader &reader);
-  static DnsRecord readRecord(Reader &reader);
+  static DnsRecord readRecord(Reader &reader, bool withString = false);
 };
 
 } // namespace Netpp::Dns

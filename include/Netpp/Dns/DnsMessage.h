@@ -135,6 +135,7 @@ struct DnsRecord
   DnsClass cls = DnsClass::IN;
   uint32_t ttl = 0;
   std::vector<uint8_t> rdata;
+  std::string rdataString;
 
   // Convenience accessors for common record types
   std::string rdataAsIPv4() const;

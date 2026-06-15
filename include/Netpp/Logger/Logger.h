@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <execinfo.h>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -9,6 +10,35 @@
 #include <string>
 #include <string_view>
 #include <unistd.h>
+
+[[noreturn]] inline void netpp_terminate_handler()
+{
+  std::fprintf(stderr, "\n=== std::terminate called ===\n");
+
+  if (auto ex = std::current_exception())
+  {
+    try
+    {
+      std::rethrow_exception(ex);
+    }
+    catch (const std::exception &e)
+    {
+      std::fprintf(stderr, "uncaught exception: %s\n", e.what());
+    }
+    catch (...)
+    {
+      std::fprintf(stderr, "uncaught exception of unknown type\n");
+    }
+  }
+
+  void *frames[64];
+  int n = ::backtrace(frames, 64);
+  std::fprintf(stderr, "backtrace (%d frames):\n", n);
+  ::backtrace_symbols_fd(frames, n, STDERR_FILENO);
+  std::fflush(stderr);
+
+  std::abort();
+}
 
 namespace Netpp::Logger
 {

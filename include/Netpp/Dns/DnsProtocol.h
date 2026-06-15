@@ -42,7 +42,7 @@ public:
   static constexpr const char *DNS = "dns";
 
   DnsProtocol(Core::UdpHandler *handler, TimerScheduler *timer, const char *nameserver = "8.8.8.8", uint16_t port = 53,
-              std::chrono::milliseconds queryTimeout = std::chrono::seconds(5))
+              std::chrono::milliseconds queryTimeout = std::chrono::seconds(1))
       : _handler(handler), _timer(timer), _nameserver(nameserver), _port(port), _queryTimeout(queryTimeout),
         _rng(std::random_device{}())
   {

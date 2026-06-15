@@ -9,7 +9,6 @@
 #include <sstream>
 #include <string>
 
-#include <execinfo.h>
 #include <unistd.h>
 
 #include <lyra/lyra.hpp>
@@ -35,35 +34,6 @@ static const char *SERVER = "server";
 void sigpipe_handler(int signum)
 {
   logger(SERVER, LogLevel::INFO, "SIGPIPE caught", signum);
-}
-
-[[noreturn]] void terminate_handler()
-{
-  std::fprintf(stderr, "\n=== std::terminate called ===\n");
-
-  if (auto ex = std::current_exception())
-  {
-    try
-    {
-      std::rethrow_exception(ex);
-    }
-    catch (const std::exception &e)
-    {
-      std::fprintf(stderr, "uncaught exception: %s\n", e.what());
-    }
-    catch (...)
-    {
-      std::fprintf(stderr, "uncaught exception of unknown type\n");
-    }
-  }
-
-  void *frames[64];
-  int n = ::backtrace(frames, 64);
-  std::fprintf(stderr, "backtrace (%d frames):\n", n);
-  ::backtrace_symbols_fd(frames, n, STDERR_FILENO);
-  std::fflush(stderr);
-
-  std::abort();
 }
 
 struct CliArgs
@@ -131,7 +101,7 @@ struct CliArgs
 
 int main(int argc, const char **argv)
 {
-  std::set_terminate(terminate_handler);
+  std::set_terminate(netpp_terminate_handler);
 
   CliArgs args{argc, argv};
 

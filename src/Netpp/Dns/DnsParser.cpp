@@ -1,6 +1,7 @@
 #include "Netpp/Dns/DnsParser.h"
 
 #include <arpa/inet.h>
+#include <sstream>
 
 namespace Netpp::Dns
 {
@@ -186,7 +187,7 @@ DnsMessage DnsParser::parse(const uint8_t *data, size_t len)
   }
   for (uint16_t i = 0; i < msg.header.ancount; i++)
   {
-    msg.answers.push_back(readRecord(reader));
+    msg.answers.push_back(readRecord(reader, true));
   }
   for (uint16_t i = 0; i < msg.header.nscount; i++)
   {
@@ -273,48 +274,19 @@ std::string DnsParser::readName(Reader &reader)
   return name;
 }
 
-std::string DnsParser::readNameAt(const uint8_t *data, size_t len, size_t offset, int depth)
+std::string DnsParser::readTxt(Reader &reader)
 {
-  if (depth > 16)
+  std::ostringstream ss;
+  uint8_t len = reader.readU8();
+  if (len > 0)
   {
-    throw DnsParseError("name compression loop detected");
+    auto ptr = reinterpret_cast<const char *>(reader.data + reader.pos);
+    ss << "\"";
+    ss << std::string(ptr, ptr + len);
+    ss << "\"";
+    reader.pos += len;
   }
-
-  Reader reader{data, len, offset};
-  std::string name;
-
-  while (reader.pos < reader.len)
-  {
-    uint8_t labelLen = reader.data[reader.pos];
-
-    if (labelLen == 0)
-    {
-      break;
-    }
-
-    if ((labelLen & 0xC0) == 0xC0)
-    {
-      reader.ensureAvailable(2);
-      uint16_t pointer = ((static_cast<uint16_t>(labelLen) & 0x3F) << 8) | reader.data[reader.pos + 1];
-      auto suffix = readNameAt(data, len, pointer, depth + 1);
-      if (!name.empty())
-      {
-        name += '.';
-      }
-      name += suffix;
-      break;
-    }
-
-    reader.ensureAvailable(1 + labelLen);
-    if (!name.empty())
-    {
-      name += '.';
-    }
-    name.append(reinterpret_cast<const char *>(reader.data + reader.pos + 1), labelLen);
-    reader.pos += 1 + labelLen;
-  }
-
-  return name;
+  return std::move(ss).str();
 }
 
 DnsQuestion DnsParser::readQuestion(Reader &reader)
@@ -326,9 +298,9 @@ DnsQuestion DnsParser::readQuestion(Reader &reader)
   return q;
 }
 
-DnsRecord DnsParser::readRecord(Reader &reader)
+DnsRecord DnsParser::readRecord(Reader &reader, bool withString)
 {
-  DnsRecord r;
+  DnsRecord r{};
   r.name = readName(reader);
   r.type = static_cast<DnsType>(reader.readU16());
   r.cls = static_cast<DnsClass>(reader.readU16());
@@ -336,7 +308,65 @@ DnsRecord DnsParser::readRecord(Reader &reader)
   uint16_t rdlen = reader.readU16();
   reader.ensureAvailable(rdlen);
   r.rdata.assign(reader.data + reader.pos, reader.data + reader.pos + rdlen);
-  reader.pos += rdlen;
+  if (withString)
+  {
+    std::ostringstream ss;
+    switch (r.type)
+    {
+    case DnsType::A:
+      ss << r.rdataAsIPv4();
+      reader.skip(4);
+      break;
+    case DnsType::AAAA:
+      ss << r.rdataAsIPv6();
+      reader.skip(16);
+      break;
+    case DnsType::NS:
+    case DnsType::PTR:
+    case DnsType::CNAME:
+      ss << readName(reader);
+      break;
+    case DnsType::TXT:
+      ss << readTxt(reader);
+      break;
+    case DnsType::MX:
+      // MX record format: preference (2 bytes) + domain name
+      if (r.rdata.size() >= 2)
+      {
+        ss << reader.readU16() << " ";
+        ss << readName(reader);
+      }
+      break;
+    case DnsType::SOA:
+      // SOA record format: mname (domain name) + rname (domain name) +
+      // serial (4 bytes) + refresh (4 bytes) + retry (4 bytes) + expire (4 bytes) + minimum (4 bytes)
+      if (r.rdata.size() >= 24)
+      {
+        ss << readName(reader) << " "; // mname
+        ss << readName(reader) << " "; // rname
+        ss << reader.readU32() << " "; // serial
+        ss << reader.readU32() << " "; // refresh
+        ss << reader.readU32() << " "; // retry
+        ss << reader.readU32() << " "; // expire
+        ss << reader.readU32();        // minimum
+      }
+      break;
+    case DnsType::SRV:
+      // SRV record format: priority (2 bytes) + weight (2 bytes) + port (2 bytes) + target (domain name)
+      if (r.rdata.size() >= 6)
+      {
+        ss << reader.readU16() << " "; // priority
+        ss << reader.readU16() << " "; // weight
+        ss << reader.readU16() << " "; // port
+        ss << readName(reader);        // target
+      }
+      break;
+    default:
+      reader.pos += rdlen;
+      break;
+    }
+    r.rdataString = std::move(ss).str();
+  }
   return r;
 }
 
