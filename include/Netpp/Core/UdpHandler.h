@@ -73,12 +73,12 @@ public:
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = inet_addr(peerAddr.c_str());
 
-    return createConnection(conn, protocol, addr);
+    return createConnection(conn->getId(), protocol, addr);
   }
 
-  ConnectionPtr createConnection(ConnectionPtr conn, Protocol *protocol, const sockaddr_in &peerAddr)
+  ConnectionPtr createConnection(sock_t s, Protocol *protocol, const sockaddr_in &peerAddr)
   {
-    return std::make_shared<Connection>(conn->getId(), protocol, peerAddr, false);
+    return std::make_shared<Connection>(s, protocol, peerAddr, false);
   }
 
   virtual ~UdpHandler()
@@ -116,7 +116,7 @@ public:
     if (len > 0)
     {
       data.buffer.resize(static_cast<size_t>(len));
-      auto conn = std::make_shared<Connection>(s, protocol, addr, false);
+      auto conn = createConnection(s, protocol, addr);
       handleData(conn, std::move(data));
     }
     else if (len < 0 && err != EAGAIN && err != EWOULDBLOCK)
