@@ -145,9 +145,9 @@ int main(int argc, const char **argv)
 
   std::signal(SIGPIPE, sigpipe_handler);
 
-  Netpp::EventLoopEpoll loop;
-
-  Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
+  Netpp::EventLoopEpoll loop{};
+  Netpp::LoopControlHandler loopControl{&loop};
+  Netpp::SignalHandler signals{&loop, &loopControl, {SIGINT, SIGTERM}};
 
   std::unique_ptr<Netpp::Dispatcher> dispatcher;
   if (args.workerThreads > 0)

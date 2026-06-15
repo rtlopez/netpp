@@ -4,13 +4,13 @@
 #include <cassert>
 #include <mutex>
 #include <sys/epoll.h>
-#include <sys/eventfd.h>
 #include <unistd.h>
 #include <vector>
 
 #include "EventLoop.h"
 #include "EventLoopHandler.h"
 #include "Exception.h"
+#include "LoopControlHandler.h"
 #include "Netpp/Logger/Logger.h"
 
 // https://medium.com/@m-ibrahim.research/mastering-epoll-the-engine-behind-high-performance-linux-networking-85a15e6bde90
@@ -20,12 +20,13 @@ namespace Netpp
 
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
-static const char *EPOLL = "epoll";
 
 class EventLoopEpoll : public EventLoop
 {
 public:
-  EventLoopEpoll() : _fd(-1), _wake_fd(-1), _running(true), _timeout(-1), _handlers(1024)
+  static constexpr const char *EPOLL = "epoll";
+
+  EventLoopEpoll() : _fd(-1), _running(true), _timeout(-1), _handlers(1024)
   {
     _fd = ::epoll_create1(0);
 
@@ -35,26 +36,11 @@ public:
       logger(EPOLL, LogLevel::ERROR, _fd, err, ::strerror(err));
       throw EventLoopException(err, "epoll_create1() failed");
     }
-
-    _wake_fd = ::eventfd(0, EFD_NONBLOCK);
-
-    if (_wake_fd < 0)
-    {
-      auto err = errno;
-      logger(EPOLL, LogLevel::ERROR, _wake_fd, err, ::strerror(err));
-      throw EventLoopException(err, "eventfd() failed");
-    }
-
-    logger(EPOLL, LogLevel::TRACE, _fd, _wake_fd);
-
-    add(_wake_fd, nullptr);
   }
 
   virtual ~EventLoopEpoll()
   {
-    logger(EPOLL, LogLevel::TRACE, _fd, _wake_fd);
-    del(_wake_fd);
-    ::close(_wake_fd);
+    logger(EPOLL, LogLevel::TRACE, _fd);
     ::close(_fd);
   }
 
@@ -165,37 +151,19 @@ public:
     }
   }
 
-  void stop() override
+  StopCallback getStopCallback() override
   {
-    _running.store(false, std::memory_order_relaxed);
-    wake();
-  }
-
-  void wake()
-  {
-    uint64_t val = 1;
-    auto n = ::write(_wake_fd, &val, sizeof(val));
-    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-    {
-      logger(EPOLL, LogLevel::WARN, "wake:write", errno, ::strerror(errno));
-    }
-    logger(EPOLL, LogLevel::TRACE, "");
+    return [this]() { requestStop(); };
   }
 
 private:
+  void requestStop()
+  {
+    _running.store(false, std::memory_order_relaxed);
+  }
+
   void handle(const epoll_event &ev)
   {
-    if (ev.data.fd == _wake_fd)
-    {
-      uint64_t val;
-      auto n = ::read(_wake_fd, &val, sizeof(val));
-      if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-      {
-        logger(EPOLL, LogLevel::WARN, "wake:read", errno, ::strerror(errno));
-      }
-      return;
-    }
-
     auto handler = getHandler(ev.data.fd);
     logger(EPOLL, LogLevel::TRACE, ev.data.fd, ev.events, !!handler);
     if (!handler)
@@ -274,7 +242,6 @@ private:
 
   static const size_t MAX_EVENTS = 64;
   int _fd;
-  int _wake_fd;
   std::atomic<bool> _running;
   int _timeout;
   epoll_event _events[MAX_EVENTS];

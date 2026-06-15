@@ -10,6 +10,7 @@
 #include "Netpp/EventLoopHandler.h"
 #include "Netpp/Exception.h"
 #include "Netpp/Logger/Logger.h"
+#include "Netpp/LoopControlHandler.h"
 #include "Netpp/Socket.h"
 
 namespace Netpp
@@ -22,7 +23,8 @@ static const char *SIGNAL = "signal";
 class SignalHandler : public EventLoopHandler
 {
 public:
-  SignalHandler(EventLoop *loop, std::initializer_list<int> signals) : _loop(loop), _fd(-1)
+  SignalHandler(EventLoop *loop, LoopControlHandler *loopControl, std::initializer_list<int> signals)
+      : _loop(loop), _loopControl(loopControl), _fd(-1)
   {
     sigset_t mask;
     sigemptyset(&mask);
@@ -63,14 +65,14 @@ public:
     if (len == sizeof(info))
     {
       logger(SIGNAL, LogLevel::INFO, "Caught signal", info.ssi_signo);
-      _loop->stop();
+      _loopControl->stop();
     }
   }
 
   void handleError(sock_t s) override
   {
     logger(SIGNAL, LogLevel::ERROR, "Error in signal handler", s);
-    _loop->stop();
+    _loopControl->stop();
   }
 
   void handleWriting(sock_t) override
@@ -79,6 +81,7 @@ public:
 
 private:
   EventLoop *_loop;
+  LoopControlHandler *_loopControl;
   sock_t _fd;
 };
 

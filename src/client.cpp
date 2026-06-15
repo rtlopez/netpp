@@ -9,6 +9,7 @@
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/EventLoopHandler.h"
 #include "Netpp/Logger/Logger.h"
+#include "Netpp/LoopControlHandler.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/SignalHandler.h"
 #include "Netpp/TransportHandler.h"
@@ -19,7 +20,8 @@ static constexpr uint16_t ECHO_PORT = 1236;
 class ClientProtocol : public Netpp::Protocol
 {
 public:
-  ClientProtocol(Netpp::TransportHandler *handler, Netpp::EventLoop *loop) : _handler(handler), _loop(loop)
+  ClientProtocol(Netpp::TransportHandler *handler, Netpp::LoopControlHandler *loopControl)
+      : _handler(handler), _loopControl(loopControl)
   {
     on(Netpp::EventType::CONNECT, [this](Netpp::ConnectionPtr conn, const Netpp::DataEvent &) {
       // store connection for sending data from stdin handler
@@ -29,7 +31,7 @@ public:
     on(Netpp::EventType::DISCONNECT, [this](Netpp::ConnectionPtr, const Netpp::DataEvent &) {
       // stop loop on disconnection
       _conn.reset();
-      _loop->stop();
+      _loopControl->stop();
     });
 
     on(Netpp::EventType::DATA, [](Netpp::ConnectionPtr, const Netpp::DataEvent &data) {
@@ -54,15 +56,16 @@ public:
 
 private:
   Netpp::TransportHandler *_handler;
-  Netpp::EventLoop *_loop;
+  Netpp::LoopControlHandler *_loopControl;
   Netpp::ConnectionWeakPtr _conn;
 };
 
 class StdinHandler : public Netpp::EventLoopHandler
 {
 public:
-  StdinHandler(Netpp::EventLoop *loop, std::function<void(const std::string &)> receiver)
-      : _loop(loop), _receiver(receiver)
+  StdinHandler(Netpp::EventLoop *loop, Netpp::LoopControlHandler *loopControl,
+               std::function<void(const std::string &)> receiver)
+      : _loop(loop), _loopControl(loopControl), _receiver(receiver)
   {
     // add stdin fd to event loop
     _loop->add(STDIN_FILENO, this);
@@ -75,7 +78,7 @@ public:
     if (!std::getline(std::cin, line))
     {
       Netpp::Logger::logger("stdin", Netpp::Logger::LogLevel::DEBUG, s, "stopping");
-      _loop->stop();
+      _loopControl->stop();
       return;
     }
     line += '\n';
@@ -91,11 +94,12 @@ public:
   {
     // log error and stop loop
     Netpp::Logger::logger("stdin", Netpp::Logger::LogLevel::DEBUG, s, "error");
-    _loop->stop();
+    _loopControl->stop();
   }
 
 private:
   Netpp::EventLoop *_loop;
+  Netpp::LoopControlHandler *_loopControl;
   std::function<void(const std::string &)> _receiver;
 };
 
@@ -108,13 +112,14 @@ int main()
   Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::DEBUG);
 
   Netpp::EventLoopEpoll loop;
-  Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
+  Netpp::LoopControlHandler loopControl{&loop};
+  Netpp::SignalHandler signals{&loop, &loopControl, {SIGINT, SIGTERM}};
   Netpp::Core::TimerHandler timer{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
   Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timer};
 
-  ClientProtocol protocol{&tcpHandler, &loop};
-  StdinHandler stdinHandler{&loop, [&protocol](const std::string &line) { protocol.send(line); }};
+  ClientProtocol protocol{&tcpHandler, &loopControl};
+  StdinHandler stdinHandler{&loop, &loopControl, [&protocol](const std::string &line) { protocol.send(line); }};
 
   tcpHandler.connect(ECHO_HOST, ECHO_PORT, &protocol);
 
