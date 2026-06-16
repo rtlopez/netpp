@@ -19,11 +19,11 @@ using Logger::LogLevel;
 class ThreadPoolDispatcher : public Dispatcher
 {
 public:
-  static constexpr const char *DISPATCH = "dispatch";
+  static constexpr const char *DISP = "disp";
 
   ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop), _stop(false)
   {
-    logger(DISPATCH, LogLevel::DEBUG, numThreads);
+    logger(DISP, LogLevel::DEBUG, numThreads);
     _workers.reserve(numThreads);
     for (size_t i = 0; i < numThreads; i++)
     {
@@ -33,13 +33,13 @@ public:
 
   virtual ~ThreadPoolDispatcher()
   {
-    logger(DISPATCH, LogLevel::DEBUG, "");
+    logger(DISP, LogLevel::DEBUG, "");
     stop();
   }
 
   void stop() override
   {
-    logger(DISPATCH, LogLevel::DEBUG, "");
+    logger(DISP, LogLevel::DEBUG, "");
     {
       std::scoped_lock lock(_taskMutex);
       if (_stop)
@@ -92,7 +92,7 @@ public:
           {
             return;
           }
-          logger(DISPATCH, LogLevel::DEBUG, conn->getId(), "gen:cont");
+          logger(DISP, LogLevel::DEBUG, conn->getId(), "gen:cont");
           data = conn->runGenerator();
         }
         send(conn, std::move(data));
@@ -105,7 +105,7 @@ public:
     auto &queue = conn->sendQueue();
     {
       std::scoped_lock sendLock(conn->sendMutex());
-      logger(DISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
+      logger(DISP, LogLevel::DEBUG, conn->getId(), queue.size());
     }
     while (true)
     {
@@ -146,7 +146,7 @@ public:
 
   void post(MoveOnlyFunction<void()> task) override
   {
-    logger(DISPATCH, LogLevel::TRACE, "");
+    logger(DISP, LogLevel::TRACE, "");
     {
       std::scoped_lock lock(_taskMutex);
       _taskQueue.push(std::move(task));
@@ -156,7 +156,7 @@ public:
 
   void post(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
   {
-    logger(DISPATCH, LogLevel::TRACE, conn->getId());
+    logger(DISP, LogLevel::TRACE, conn->getId());
     bool shouldSchedule = false;
     {
       std::scoped_lock lock(conn->strandMutex());
@@ -182,7 +182,7 @@ private:
       auto conn = weak.lock();
       if (!conn)
       {
-        logger(DISPATCH, LogLevel::DEBUG, "connection expired, dropping tasks");
+        logger(DISP, LogLevel::DEBUG, "closed");
         return;
       }
       MoveOnlyFunction<void()> task;
@@ -216,7 +216,7 @@ private:
         task = std::move(_taskQueue.front());
         _taskQueue.pop();
       }
-      logger(DISPATCH, LogLevel::TRACE, "");
+      logger(DISP, LogLevel::TRACE, "");
       task();
     }
   }

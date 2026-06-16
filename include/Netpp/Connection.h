@@ -18,15 +18,15 @@ class Protocol;
 
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
-static const char *CONNECTION = "connection";
 
 class Connection
 {
 public:
+  static constexpr const char *CONN = "conn";
   Connection(fd_t s, Protocol *protocol, const sockaddr_in &peerAddr, bool ownsSocket = true)
       : _s(s), _protocol(protocol), _peerAddr(peerAddr), _ownsSocket(ownsSocket)
   {
-    logger(CONNECTION, LogLevel::DEBUG, _s);
+    logger(CONN, LogLevel::DEBUG, _s);
   }
 
   virtual ~Connection()
@@ -35,7 +35,7 @@ public:
     {
       _context.reset();
     }
-    logger(CONNECTION, LogLevel::DEBUG, _s);
+    logger(CONN, LogLevel::DEBUG, _s);
     if (_ownsSocket && _s >= 0)
     {
       Socket::close(_s);

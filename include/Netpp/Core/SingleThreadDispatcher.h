@@ -12,7 +12,7 @@ using Logger::LogLevel;
 class SingleThreadDispatcher : public Dispatcher
 {
 public:
-  static constexpr const char *DISPATCH = "dispatch";
+  static constexpr const char *DISP = "disp";
 
   SingleThreadDispatcher(EventLoop *loop) : Dispatcher(loop)
   {
@@ -20,7 +20,7 @@ public:
 
   virtual ~SingleThreadDispatcher()
   {
-    logger(DISPATCH, LogLevel::DEBUG, "");
+    logger(DISP, LogLevel::DEBUG, "");
   }
 
   void send(ConnectionPtr conn, DataEvent data) override
@@ -39,27 +39,27 @@ public:
   {
     if (conn->hasGenerator())
     {
-      logger(DISPATCH, LogLevel::DEBUG, conn->getId(), "gen:cont");
+      logger(DISP, LogLevel::DEBUG, conn->getId(), "gen:cont");
       send(conn, conn->runGenerator());
     }
   }
 
   void post(MoveOnlyFunction<void()> task) override
   {
-    logger(DISPATCH, LogLevel::TRACE, "fn");
+    logger(DISP, LogLevel::TRACE, "fn");
     task();
   }
 
   void post(ConnectionPtr conn, MoveOnlyFunction<void()> task) override
   {
-    logger(DISPATCH, LogLevel::TRACE, conn->getId(), "con");
+    logger(DISP, LogLevel::TRACE, conn->getId(), "con");
     task();
   }
 
   DrainResult drain(ConnectionPtr conn, std::function<bool(ConnectionPtr, DataEvent &)> sendFunc) override
   {
     auto &queue = conn->sendQueue();
-    logger(DISPATCH, LogLevel::DEBUG, conn->getId(), queue.size());
+    logger(DISP, LogLevel::DEBUG, conn->getId(), queue.size());
     while (!queue.empty())
     {
       auto &data = queue.front();
