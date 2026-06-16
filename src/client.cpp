@@ -3,11 +3,11 @@
 #include <unistd.h>
 
 #include "Netpp/Core/SingleThreadDispatcher.h"
+#include "Netpp/Core/StdinHandler.h"
 #include "Netpp/Core/TcpHandler.h"
 #include "Netpp/Core/TimerHandler.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/EventLoopEpoll.h"
-#include "Netpp/EventLoopHandler.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/LoopControlHandler.h"
 #include "Netpp/Protocol.h"
@@ -60,49 +60,6 @@ private:
   Netpp::ConnectionWeakPtr _conn;
 };
 
-class StdinHandler : public Netpp::EventLoopHandler
-{
-public:
-  StdinHandler(Netpp::EventLoop *loop, Netpp::LoopControlHandler *loopControl,
-               std::function<void(const std::string &)> receiver)
-      : _loop(loop), _loopControl(loopControl), _receiver(receiver)
-  {
-    // add stdin fd to event loop
-    _loop->add(STDIN_FILENO, this);
-  }
-
-  void handleReading(Netpp::sock_t s) override
-  {
-    // read a line from stdin and send to receiver callback
-    std::string line;
-    if (!std::getline(std::cin, line))
-    {
-      Netpp::Logger::logger("stdin", Netpp::Logger::LogLevel::DEBUG, s, "stopping");
-      _loopControl->stop();
-      return;
-    }
-    line += '\n';
-    _receiver(line);
-  }
-
-  void handleWriting(Netpp::sock_t) override
-  {
-    // not used for stdin
-  }
-
-  void handleError(Netpp::sock_t s) override
-  {
-    // log error and stop loop
-    Netpp::Logger::logger("stdin", Netpp::Logger::LogLevel::DEBUG, s, "error");
-    _loopControl->stop();
-  }
-
-private:
-  Netpp::EventLoop *_loop;
-  Netpp::LoopControlHandler *_loopControl;
-  std::function<void(const std::string &)> _receiver;
-};
-
 int main()
 {
   auto logHandler = std::make_unique<Netpp::Logger::LogHandlerSimple>(
@@ -119,7 +76,8 @@ int main()
   Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timer};
 
   ClientProtocol protocol{&tcpHandler, &loopControl};
-  StdinHandler stdinHandler{&loop, &loopControl, [&protocol](const std::string &line) { protocol.send(line); }};
+  Netpp::Core::StdinHandler stdinHandler{&loop, &loopControl,
+                                         [&protocol](const std::string &line) { protocol.send(line); }};
 
   tcpHandler.connect(ECHO_HOST, ECHO_PORT, &protocol);
 
