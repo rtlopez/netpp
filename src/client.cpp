@@ -7,7 +7,7 @@
 #include "Netpp/Core/TcpHandler.h"
 #include "Netpp/Core/TimerHandler.h"
 #include "Netpp/DataEvent.h"
-#include "Netpp/EventLoopEpoll.h"
+#include "Netpp/EventLoop.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/TransportHandler.h"
@@ -65,7 +65,7 @@ int main()
   Netpp::Logger::Logger::getInstance()->addHandler(std::move(logHandler));
   Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::DEBUG);
 
-  Netpp::EventLoopEpoll loop;
+  Netpp::EventLoop loop;
   Netpp::Core::TimerHandler timer{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
   Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timer};

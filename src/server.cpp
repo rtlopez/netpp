@@ -20,7 +20,7 @@
 #include "Netpp/Core/UdpHandler.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/Echo/EchoProtocol.h"
-#include "Netpp/EventLoopEpoll.h"
+#include "Netpp/EventLoop.h"
 #include "Netpp/FileStream.h"
 #include "Netpp/Http/HttpProtocol.h"
 #include "Netpp/Http/HttpRouter.h"
@@ -114,7 +114,7 @@ int main(int argc, const char **argv)
 
   std::signal(SIGPIPE, sigpipe_handler);
 
-  Netpp::EventLoopEpoll loop{};
+  Netpp::EventLoop loop{};
   std::unique_ptr<Netpp::Dispatcher> dispatcher;
   if (args.workerThreads > 0)
   {

@@ -13,8 +13,8 @@ C++ networking library educational demo
 ## HTTP Server example
 
 ```cpp
-  Netpp::EventLoopEpoll loop;
-  Netpp::Core::ThreadPoll dispatcher; // route data to thread workers
+  Netpp::EventLoop loop;
+  Netpp::Core::ThreadPollDispatcher dispatcher; // route data to thread workers
   Netpp::Core::TcpHandler tcp{&loop, &dispatcher}; // handle tcp sockets events
 
   Netpp::Http::HttpProtocol http(&tcp); // protocol handler
@@ -29,7 +29,7 @@ C++ networking library educational demo
 ## Chat and Echo server example
 
 ```cpp
-  Netpp::EventLoopEpoll loop;
+  Netpp::EventLoop loop;
   Netpp::Core::SingleThreadDispatcher dispatcher;
   Netpp::Core::TcpHandler tcp{&loop, &dispatcher};
 

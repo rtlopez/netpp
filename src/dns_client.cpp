@@ -9,7 +9,7 @@
 #include "Netpp/Core/UdpHandler.h"
 #include "Netpp/Dns/DnsMessage.h"
 #include "Netpp/Dns/DnsProtocol.h"
-#include "Netpp/EventLoopEpoll.h"
+#include "Netpp/EventLoop.h"
 #include "Netpp/Logger/Logger.h"
 
 int main(int argc, char *argv[])
@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
   Netpp::Logger::Logger::getInstance()->addHandler(std::move(logHandler));
   Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::WARN);
 
-  Netpp::EventLoopEpoll loop{};
+  Netpp::EventLoop loop{};
   Netpp::Core::TimerHandler timer{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
   Netpp::Core::UdpHandler udpHandler{&loop, &dispatcher};

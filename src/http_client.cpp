@@ -6,7 +6,7 @@
 #include "Netpp/Core/SingleThreadDispatcher.h"
 #include "Netpp/Core/TcpHandler.h"
 #include "Netpp/Core/TimerHandler.h"
-#include "Netpp/EventLoopEpoll.h"
+#include "Netpp/EventLoop.h"
 #include "Netpp/Http/HttpClientProtocol.h"
 #include "Netpp/Logger/Logger.h"
 
@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
   Netpp::Logger::Logger::getInstance()->addHandler(std::move(logHandler));
   Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::DEBUG);
 
-  Netpp::EventLoopEpoll loop;
+  Netpp::EventLoop loop;
   Netpp::Core::TimerHandler timers{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
   Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timers};
