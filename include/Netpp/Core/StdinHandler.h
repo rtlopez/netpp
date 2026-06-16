@@ -1,58 +1,58 @@
 #pragma once
 
-#include <functional>
 #include <string>
 
 #include "Netpp/EventLoop.h"
 #include "Netpp/Logger/Logger.h"
-#include "Netpp/LoopControlHandler.h"
+#include "Netpp/MoveOnlyFunction.h"
 
 namespace Netpp::Core
 {
+using Netpp::Logger::logger;
+using Netpp::Logger::LogLevel;
 
-class StdinHandler : public Netpp::EventLoopHandler
+class StdinHandler : public EventLoopHandler
 {
 public:
+  using RecieverCallback = MoveOnlyFunction<void(const std::string &)>;
+
   static constexpr const char *STDIN = "stdin";
 
-  StdinHandler(Netpp::EventLoop *loop, Netpp::LoopControlHandler *loopControl,
-               std::function<void(const std::string &)> receiver)
-      : _loop(loop), _loopControl(loopControl), _receiver(receiver)
+  StdinHandler(EventLoop *loop, RecieverCallback receiver) : _loop(loop), _receiver(std::move(receiver))
   {
     // add stdin fd to event loop
     _loop->add(STDIN_FILENO, this);
   }
 
-  void handleReading(Netpp::sock_t s) override
+  void handleReading(fd_t s) override
   {
     // read a line from stdin and send to receiver callback
     std::string line;
     if (!std::getline(std::cin, line))
     {
-      Netpp::Logger::logger(STDIN, Netpp::Logger::LogLevel::DEBUG, s, "stopping");
-      _loopControl->stop();
+      logger(STDIN, LogLevel::DEBUG, s, "stopping");
+      _loop->stop();
       return;
     }
     line += '\n';
     _receiver(line);
   }
 
-  void handleWriting(Netpp::sock_t) override
+  void handleWriting(fd_t) override
   {
     // not used for stdin
   }
 
-  void handleError(Netpp::sock_t s) override
+  void handleError(fd_t s) override
   {
     // log error and stop loop
-    Netpp::Logger::logger(STDIN, Netpp::Logger::LogLevel::DEBUG, s, "error");
-    _loopControl->stop();
+    logger(STDIN, LogLevel::DEBUG, s, "error");
+    _loop->stop();
   }
 
 private:
-  Netpp::EventLoop *_loop;
-  Netpp::LoopControlHandler *_loopControl;
-  std::function<void(const std::string &)> _receiver;
+  EventLoop *_loop = nullptr;
+  RecieverCallback _receiver = {};
 };
 
 } // namespace Netpp::Core

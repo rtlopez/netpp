@@ -2,15 +2,18 @@
 
 #include <atomic>
 #include <cassert>
+#include <csignal>
+#include <initializer_list>
 #include <mutex>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
+#include <sys/signalfd.h>
 #include <unistd.h>
 #include <vector>
 
 #include "EventLoop.h"
 #include "EventLoopHandler.h"
 #include "Exception.h"
-#include "LoopControlHandler.h"
 #include "Netpp/Logger/Logger.h"
 
 // https://medium.com/@m-ibrahim.research/mastering-epoll-the-engine-behind-high-performance-linux-networking-85a15e6bde90
@@ -24,7 +27,7 @@ using Netpp::Logger::LogLevel;
 class EventLoopEpoll : public EventLoop
 {
 public:
-  static constexpr const char *EPOLL = "epoll";
+  static constexpr const char *LOOP = "loop";
 
   EventLoopEpoll() : _handlers(1024)
   {
@@ -33,24 +36,70 @@ public:
     if (_fd < 0)
     {
       int err = errno;
-      logger(EPOLL, LogLevel::ERROR, _fd, err, ::strerror(err));
+      logger(LOOP, LogLevel::ERROR, _fd, err, ::strerror(err));
       throw EventLoopException(err, "epoll_create1() failed");
     }
+    enableWakeUp();
+    enableSignals({SIGINT, SIGTERM});
   }
 
   virtual ~EventLoopEpoll()
   {
-    logger(EPOLL, LogLevel::TRACE, _fd);
+    logger(LOOP, LogLevel::TRACE, _fd, _event_fd, _signal_fd);
+    if (_signal_fd >= 0)
+    {
+      del(_signal_fd, false);
+      ::close(_signal_fd);
+    }
+    if (_event_fd >= 0)
+    {
+      del(_event_fd, false);
+      ::close(_event_fd);
+    }
     ::close(_fd);
   }
 
-  void add(sock_t fd, EventLoopHandler *handler, bool refCount = true) override
+  void enableWakeUp()
+  {
+    _event_fd = ::eventfd(0, EFD_NONBLOCK);
+    if (_event_fd < 0)
+    {
+      int err = errno;
+      logger(LOOP, LogLevel::ERROR, _event_fd, err, ::strerror(err));
+      throw EventLoopException(err, "eventfd() failed");
+    }
+    add(_event_fd, nullptr, false);
+  }
+
+  void enableSignals(std::initializer_list<int> signals)
+  {
+    sigset_t mask;
+    ::sigemptyset(&mask);
+    for (int sig : signals)
+    {
+      ::sigaddset(&mask, sig);
+    }
+
+    if (::sigprocmask(SIG_BLOCK, &mask, nullptr) < 0)
+    {
+      throw EventLoopException(errno, "sigprocmask() failed");
+    }
+
+    _signal_fd = ::signalfd(-1, &mask, SFD_NONBLOCK);
+    if (_signal_fd < 0)
+    {
+      throw EventLoopException(errno, "signalfd() failed");
+    }
+    add(_signal_fd, nullptr, false);
+  }
+
+  void add(fd_t fd, EventLoopHandler *handler, bool refCount = true) override
   {
     assert(_fd >= 0);
 
     uint32_t events = EPOLLIN | EPOLLPRI;
 
-    logger(EPOLL, LogLevel::TRACE, fd, events, "read");
+    logger(LOOP, LogLevel::TRACE, fd, events, "read");
 
     epoll_event event = {events, {.fd = fd}};
 
@@ -59,8 +108,8 @@ public:
       if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &event) < 0)
       {
         auto err = errno;
-        logger(EPOLL, LogLevel::ERROR, fd, events, err, ::strerror(err));
-        throw EventLoopException(err, std::string("epoll_ctl(EPOLL_CTL_ADD) failed fd=") + std::to_string(fd));
+        logger(LOOP, LogLevel::ERROR, fd, events, err, ::strerror(err));
+        throw EventLoopException(err, std::string("epoll_ctl(LOOP_CTL_ADD) failed fd=") + std::to_string(fd));
       }
       addHandler(fd, handler);
 
@@ -74,13 +123,13 @@ public:
       if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
       {
         auto err = errno;
-        logger(EPOLL, LogLevel::ERROR, fd, events, err, ::strerror(err));
-        throw EventLoopException(err, std::string("epoll_ctl(EPOLL_CTL_MOD) failed fd=") + std::to_string(fd));
+        logger(LOOP, LogLevel::ERROR, fd, events, err, ::strerror(err));
+        throw EventLoopException(err, std::string("epoll_ctl(LOOP_CTL_MOD) failed fd=") + std::to_string(fd));
       }
     }
   }
 
-  void mod(sock_t fd, bool write = false) override
+  void mod(fd_t fd, bool write = false) override
   {
     assert(_fd >= 0);
 
@@ -91,20 +140,20 @@ public:
     }
     epoll_event event = {events, {.fd = fd}};
 
-    logger(EPOLL, LogLevel::TRACE, fd, events, write ? "write" : "read");
+    logger(LOOP, LogLevel::TRACE, fd, events, write ? "write" : "read");
 
     if (epoll_ctl(_fd, EPOLL_CTL_MOD, fd, &event) < 0)
     {
       int err = errno;
-      logger(EPOLL, LogLevel::WARN, fd, "ignore", err, ::strerror(err));
+      logger(LOOP, LogLevel::WARN, fd, "ignore", err, ::strerror(err));
     }
   }
 
-  void del(sock_t fd, bool refCount = true) override
+  void del(fd_t fd, bool refCount = true) override
   {
     assert(_fd >= 0);
 
-    logger(EPOLL, LogLevel::TRACE, fd);
+    logger(LOOP, LogLevel::TRACE, fd);
 
     if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, nullptr) < 0)
     {
@@ -112,10 +161,10 @@ public:
       // EBADF: fd already closed; ENOENT: fd was never registered — both are benign
       if (err != EBADF && err != ENOENT)
       {
-        // throw EventLoopException(err, "epoll_ctl(EPOLL_CTL_DEL) failed");
-        assert(false && "epoll_ctl(EPOLL_CTL_DEL) failed");
+        // throw EventLoopException(err, "epoll_ctl(LOOP_CTL_DEL) failed");
+        assert(false && "epoll_ctl(LOOP_CTL_DEL) failed");
       }
-      logger(EPOLL, LogLevel::WARN, "epoll_ctl(EPOLL_CTL_DEL) ignored", fd, err, ::strerror(err));
+      logger(LOOP, LogLevel::WARN, "epoll_ctl(LOOP_CTL_DEL) ignored", fd, err, ::strerror(err));
     }
 
     removeHandler(fd);
@@ -139,7 +188,7 @@ public:
       if (ret == -1)
       {
         int err = errno;
-        logger(EPOLL, LogLevel::ERROR, "err", ret, err);
+        logger(LOOP, LogLevel::ERROR, "err", ret, err);
         if (err == EINTR)
         {
           continue; // interrupted, try again
@@ -150,7 +199,7 @@ public:
       if (ret == 0)
       {
         // `epoll_wait` reached its timeout
-        logger(EPOLL, LogLevel::TRACE, "loop timeout");
+        logger(LOOP, LogLevel::TRACE, "loop timeout");
         continue;
       }
 
@@ -161,27 +210,56 @@ public:
 
       if (_activeRefCount.load(std::memory_order_relaxed) == 0)
       {
-        logger(EPOLL, LogLevel::INFO, "loop auto-stopping");
+        logger(LOOP, LogLevel::INFO, "loop auto-stopping");
         break;
       }
     }
   }
 
-  StopCallback getStopCallback() override
+  void stop() override
   {
-    return [this]() { requestStop(); };
+    _running.store(false, std::memory_order_relaxed);
+    wake();
+  }
+
+  void wake()
+  {
+    uint64_t val = 1;
+    auto n = ::write(_event_fd, &val, sizeof(val));
+    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+    {
+      logger(LOOP, LogLevel::WARN, errno, ::strerror(errno));
+    }
   }
 
 private:
-  void requestStop()
-  {
-    _running.store(false, std::memory_order_relaxed);
-  }
-
   void handle(const epoll_event &ev)
   {
+    if (ev.data.fd == _event_fd)
+    {
+      uint64_t val;
+      auto n = ::read(_event_fd, &val, sizeof(val));
+      if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+      {
+        logger(LOOP, LogLevel::WARN, _event_fd, errno, ::strerror(errno));
+      }
+      return;
+    }
+
+    if (ev.data.fd == _signal_fd)
+    {
+      signalfd_siginfo info;
+      ssize_t len = ::read(_signal_fd, &info, sizeof(info));
+      if (len == sizeof(info))
+      {
+        logger(LOOP, LogLevel::INFO, "Caught signal", info.ssi_signo);
+        _running.store(false, std::memory_order_relaxed);
+      }
+      return;
+    }
+
     auto handler = getHandler(ev.data.fd);
-    logger(EPOLL, LogLevel::TRACE, ev.data.fd, ev.events, !!handler);
+    logger(LOOP, LogLevel::TRACE, ev.data.fd, ev.events, !!handler);
     if (!handler)
     {
       return;
@@ -211,7 +289,7 @@ private:
     }
   }
 
-  EventLoopHandler *getHandler(sock_t fd)
+  EventLoopHandler *getHandler(fd_t fd)
   {
     if (fd < 0)
     {
@@ -226,7 +304,7 @@ private:
     return _handlers[fd];
   }
 
-  void addHandler(sock_t fd, EventLoopHandler *handler)
+  void addHandler(fd_t fd, EventLoopHandler *handler)
   {
     if (fd < 0)
     {
@@ -241,7 +319,7 @@ private:
     _handlers[fd] = handler;
   }
 
-  void removeHandler(sock_t fd)
+  void removeHandler(fd_t fd)
   {
     if (fd < 0)
     {
@@ -258,10 +336,12 @@ private:
 
   static const size_t MAX_EVENTS = 64;
 
-  int _fd{-1};
+  fd_t _fd{-1};
+  fd_t _event_fd{-1};
+  fd_t _signal_fd{-1};
   std::atomic<bool> _running{true};
-  int _timeout{-1};
   std::atomic<size_t> _activeRefCount{0};
+  int _timeout{-1};
   epoll_event _events[MAX_EVENTS]{};
   std::vector<EventLoopHandler *> _handlers{};
   std::mutex _handlersMutex{};

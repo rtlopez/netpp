@@ -9,7 +9,6 @@
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/Http/HttpClientProtocol.h"
 #include "Netpp/Logger/Logger.h"
-#include "Netpp/SignalHandler.h"
 
 int main(int argc, char *argv[])
 {
@@ -23,8 +22,6 @@ int main(int argc, char *argv[])
   Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::DEBUG);
 
   Netpp::EventLoopEpoll loop;
-  Netpp::LoopControlHandler loopControl{&loop};
-  Netpp::SignalHandler signals{&loop, &loopControl, {SIGINT, SIGTERM}};
   Netpp::Core::TimerHandler timers{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
   Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timers};
@@ -58,7 +55,7 @@ int main(int argc, char *argv[])
     std::cerr << "request timed out\n";
   }
 
-  loopControl.stop();
+  loop.stop();
   loopThread.join();
   dispatcher.stop();
 

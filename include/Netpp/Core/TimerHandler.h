@@ -87,7 +87,7 @@ public:
     rearmTimerLocked();
   }
 
-  void handleReading(sock_t fd) override
+  void handleReading(fd_t fd) override
   {
     uint64_t expirations;
     auto n = ::read(fd, &expirations, sizeof(expirations));
@@ -100,11 +100,11 @@ public:
     processTimers();
   }
 
-  void handleWriting(sock_t) override
+  void handleWriting(fd_t) override
   {
   }
 
-  void handleError(sock_t fd) override
+  void handleError(fd_t fd) override
   {
     logger(TIMER, LogLevel::ERROR, fd);
   }

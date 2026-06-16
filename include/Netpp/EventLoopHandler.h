@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Socket.h"
+#include "Netpp/Types.h"
 
 namespace Netpp
 {
@@ -8,9 +8,9 @@ namespace Netpp
 class EventLoopHandler
 {
 public:
-  virtual void handleReading(sock_t s) = 0;
-  virtual void handleWriting(sock_t s) = 0;
-  virtual void handleError(sock_t s) = 0;
+  virtual void handleReading(fd_t s) = 0;
+  virtual void handleWriting(fd_t s) = 0;
+  virtual void handleError(fd_t s) = 0;
 };
 
 } // namespace Netpp

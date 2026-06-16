@@ -9,9 +9,7 @@
 #include "Netpp/DataEvent.h"
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/Logger/Logger.h"
-#include "Netpp/LoopControlHandler.h"
 #include "Netpp/Protocol.h"
-#include "Netpp/SignalHandler.h"
 #include "Netpp/TransportHandler.h"
 
 static constexpr const char *ECHO_HOST = "127.0.0.1";
@@ -20,8 +18,7 @@ static constexpr uint16_t ECHO_PORT = 1236;
 class ClientProtocol : public Netpp::Protocol
 {
 public:
-  ClientProtocol(Netpp::TransportHandler *handler, Netpp::LoopControlHandler *loopControl)
-      : _handler(handler), _loopControl(loopControl)
+  ClientProtocol(Netpp::EventLoop *loop, Netpp::TransportHandler *handler) : _loop(loop), _handler(handler)
   {
     on(Netpp::EventType::CONNECT, [this](Netpp::ConnectionPtr conn, const Netpp::DataEvent &) {
       // store connection for sending data from stdin handler
@@ -31,7 +28,7 @@ public:
     on(Netpp::EventType::DISCONNECT, [this](Netpp::ConnectionPtr, const Netpp::DataEvent &) {
       // stop loop on disconnection
       _conn.reset();
-      _loopControl->stop();
+      _loop->stop();
     });
 
     on(Netpp::EventType::DATA, [](Netpp::ConnectionPtr, const Netpp::DataEvent &data) {
@@ -55,8 +52,8 @@ public:
   }
 
 private:
+  Netpp::EventLoop *_loop;
   Netpp::TransportHandler *_handler;
-  Netpp::LoopControlHandler *_loopControl;
   Netpp::ConnectionWeakPtr _conn;
 };
 
@@ -69,15 +66,12 @@ int main()
   Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::DEBUG);
 
   Netpp::EventLoopEpoll loop;
-  Netpp::LoopControlHandler loopControl{&loop};
-  Netpp::SignalHandler signals{&loop, &loopControl, {SIGINT, SIGTERM}};
   Netpp::Core::TimerHandler timer{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
   Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timer};
 
-  ClientProtocol protocol{&tcpHandler, &loopControl};
-  Netpp::Core::StdinHandler stdinHandler{&loop, &loopControl,
-                                         [&protocol](const std::string &line) { protocol.send(line); }};
+  ClientProtocol protocol{&loop, &tcpHandler};
+  Netpp::Core::StdinHandler stdinHandler{&loop, [&protocol](const std::string &line) { protocol.send(line); }};
 
   tcpHandler.connect(ECHO_HOST, ECHO_PORT, &protocol);
 

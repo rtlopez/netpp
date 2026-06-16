@@ -10,7 +10,7 @@
 
 #include "Netpp/Exception.h"
 #include "Netpp/Logger/Logger.h"
-
+#include "Netpp/Types.h"
 namespace Netpp
 {
 
@@ -18,14 +18,12 @@ using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
 static const char *SOCKET = "socket";
 
-using sock_t = int;
-
 class Socket
 {
 public:
-  static sock_t create(int domain, int type, int protocol)
+  static fd_t create(int domain, int type, int protocol)
   {
-    sock_t fd = ::socket(domain, type, protocol);
+    fd_t fd = ::socket(domain, type, protocol);
     auto err = errno;
     if (fd < 0)
     {
@@ -38,29 +36,29 @@ public:
     return fd;
   }
 
-  static ssize_t send(sock_t fd, const void *buf, size_t len, int flags)
+  static ssize_t send(fd_t fd, const void *buf, size_t len, int flags)
   {
     return ::send(fd, buf, len, flags);
   }
 
-  static ssize_t recv(sock_t fd, void *buf, size_t len, int flags)
+  static ssize_t recv(fd_t fd, void *buf, size_t len, int flags)
   {
     return ::recv(fd, buf, len, flags);
   }
 
-  static ssize_t sendto(sock_t fd, const void *buf, size_t len, int flags, const sockaddr_in &addr)
+  static ssize_t sendto(fd_t fd, const void *buf, size_t len, int flags, const sockaddr_in &addr)
   {
     return ::sendto(fd, buf, len, flags, (const sockaddr *)&addr, sizeof(addr));
   }
 
-  static ssize_t recvfrom(sock_t fd, void *buf, size_t len, int flags, sockaddr_in &addr)
+  static ssize_t recvfrom(fd_t fd, void *buf, size_t len, int flags, sockaddr_in &addr)
   {
     socklen_t addr_len = sizeof(addr);
     std::memset(&addr, 0, sizeof(addr));
     return ::recvfrom(fd, buf, len, flags, (sockaddr *)&addr, &addr_len);
   }
 
-  static int bind(sock_t fd, const char *bind_addr, uint16_t bind_port)
+  static int bind(fd_t fd, const char *bind_addr, uint16_t bind_port)
   {
     const int enable = 1;
     if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
@@ -93,7 +91,7 @@ public:
     return ret;
   }
 
-  static int listen(sock_t fd, int size)
+  static int listen(fd_t fd, int size)
   {
     int ret = ::listen(fd, size);
     int err = errno;
@@ -109,12 +107,12 @@ public:
     return ret;
   }
 
-  static int accept(sock_t fd, sockaddr_in &addr)
+  static int accept(fd_t fd, sockaddr_in &addr)
   {
     socklen_t addr_len = sizeof(sockaddr_in);
     std::memset(&addr, 0, sizeof(sockaddr_in));
 
-    sock_t afd = ::accept(fd, (sockaddr *)&addr, &addr_len);
+    fd_t afd = ::accept(fd, (sockaddr *)&addr, &addr_len);
     int err = errno;
 
     if (afd < 0)
@@ -150,7 +148,7 @@ public:
     return afd;
   }
 
-  static int connect(sock_t fd, const char *host, uint16_t port, sockaddr_in &addr)
+  static int connect(fd_t fd, const char *host, uint16_t port, sockaddr_in &addr)
   {
     socklen_t addr_len = sizeof(addr);
     std::memset(&addr, 0, addr_len);
@@ -171,7 +169,7 @@ public:
     return ret;
   }
 
-  static int close(sock_t fd)
+  static int close(fd_t fd)
   {
     ::shutdown(fd, SHUT_WR);
     int ret = ::close(fd);
@@ -191,7 +189,7 @@ public:
     return 0;
   }
 
-  static const std::string getpeername(sock_t fd)
+  static const std::string getpeername(fd_t fd)
   {
     sockaddr_in addr;
     socklen_t addr_size = sizeof(sockaddr_in);

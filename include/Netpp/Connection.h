@@ -23,7 +23,7 @@ static const char *CONNECTION = "connection";
 class Connection
 {
 public:
-  Connection(sock_t s, Protocol *protocol, const sockaddr_in &peerAddr, bool ownsSocket = true)
+  Connection(fd_t s, Protocol *protocol, const sockaddr_in &peerAddr, bool ownsSocket = true)
       : _s(s), _protocol(protocol), _peerAddr(peerAddr), _ownsSocket(ownsSocket)
   {
     logger(CONNECTION, LogLevel::DEBUG, _s);
@@ -53,9 +53,9 @@ public:
     return _peerAddr;
   }
 
-  int getId() const
+  fd_t getId() const
   {
-    return static_cast<int>(_s);
+    return _s;
   }
 
   Protocol *getProtocol() const
@@ -155,7 +155,7 @@ public:
   }
 
 private:
-  sock_t _s;
+  fd_t _s;
   Protocol *_protocol;
   sockaddr_in _peerAddr{};
   bool _ownsSocket = true;

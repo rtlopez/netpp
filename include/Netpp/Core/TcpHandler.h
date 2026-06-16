@@ -40,7 +40,7 @@ public:
   void listen(const char *addr, uint16_t port, Protocol *protocol)
   {
     logger(TCP, LogLevel::DEBUG, addr, port);
-    sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+    auto s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     Socket::bind(s, addr, port);
     Socket::listen(s, 500);
     _listeners.emplace(s, protocol);
@@ -56,7 +56,7 @@ public:
     }
 
     logger(TCP, LogLevel::DEBUG, "connect", host, port);
-    sock_t s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+    auto s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     sockaddr_in addr;
     int ret = Socket::connect(s, host, port, addr);
 
@@ -109,7 +109,7 @@ public:
     }
   }
 
-  void handleError(sock_t s) override
+  void handleError(fd_t s) override
   {
     logger(TCP, LogLevel::DEBUG, s);
     _connecting.erase(s);
@@ -126,7 +126,7 @@ public:
     close(s);
   }
 
-  void handleReading(sock_t s) override
+  void handleReading(fd_t s) override
   {
     auto lsi = _listeners.find(s);
     if (lsi != _listeners.end())
@@ -134,7 +134,7 @@ public:
       logger(TCP, LogLevel::DEBUG, "accept", s);
       auto protocol = lsi->second;
       sockaddr_in addr;
-      sock_t as = Socket::accept(s, addr);
+      auto as = Socket::accept(s, addr);
       if (as <= 0)
       {
         logger(TCP, LogLevel::ERROR, "accept:error", s, as, errno, ::strerror(errno));
@@ -185,7 +185,7 @@ public:
     logger(TCP, LogLevel::WARN, "unknown", s);
   }
 
-  void handleWriting(sock_t s) override
+  void handleWriting(fd_t s) override
   {
     logger(TCP, LogLevel::DEBUG, s, "begin");
 
@@ -360,7 +360,7 @@ private:
     return true;
   }
 
-  void close(sock_t s)
+  void close(fd_t s)
   {
     logger(TCP, LogLevel::DEBUG, s);
     _connecting.erase(s);
@@ -373,7 +373,7 @@ private:
     }
   }
 
-  void onConnectTimeout(sock_t s)
+  void onConnectTimeout(fd_t s)
   {
     auto ci = _connecting.find(s);
     if (ci == _connecting.end())
@@ -396,7 +396,7 @@ private:
     close(s);
   }
 
-  void cancelConnectTimeout(sock_t s)
+  void cancelConnectTimeout(fd_t s)
   {
     auto it = _connectTimeouts.find(s);
     if (it == _connectTimeouts.end())
@@ -411,10 +411,10 @@ private:
   EventLoop *_loop;
   Dispatcher *_dispatcher;
   TimerScheduler *_timer;
-  std::unordered_map<sock_t, Protocol *> _listeners;
-  std::unordered_map<sock_t, ConnectionPtr> _connections;
-  std::unordered_map<sock_t, TimerScheduler::TimerToken> _connectTimeouts;
-  std::unordered_set<sock_t> _connecting; // sockets with async connect in progress
+  std::unordered_map<fd_t, Protocol *> _listeners;
+  std::unordered_map<fd_t, ConnectionPtr> _connections;
+  std::unordered_map<fd_t, TimerScheduler::TimerToken> _connectTimeouts;
+  std::unordered_set<fd_t> _connecting; // sockets with async connect in progress
 };
 
 } // namespace Netpp::Core

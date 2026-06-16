@@ -32,15 +32,15 @@ public:
   void listen(const char *addr, uint16_t port, Protocol *protocol)
   {
     logger(UDP, LogLevel::DEBUG, addr, port);
-    sock_t s = open(protocol);
+    fd_t s = open(protocol);
     Socket::bind(s, addr, port);
   }
 
   /// Open an unbound UDP socket for client use and register it for receiving.
   /// The OS assigns an ephemeral port on first sendto.
-  sock_t open(Protocol *protocol)
+  fd_t open(Protocol *protocol)
   {
-    sock_t s = Socket::create(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
+    fd_t s = Socket::create(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
     logger(UDP, LogLevel::DEBUG, s);
     _listeners.emplace(s, protocol);
     _loop->add(s, this);
@@ -62,7 +62,7 @@ public:
 
   ConnectionPtr openConnection(Protocol *protocol)
   {
-    sock_t s = open(protocol);
+    fd_t s = open(protocol);
     return std::make_shared<Connection>(s, protocol, sockaddr_in{}, false);
   }
 
@@ -76,7 +76,7 @@ public:
     return createConnection(conn->getId(), protocol, addr);
   }
 
-  ConnectionPtr createConnection(sock_t s, Protocol *protocol, const sockaddr_in &peerAddr)
+  ConnectionPtr createConnection(fd_t s, Protocol *protocol, const sockaddr_in &peerAddr)
   {
     return std::make_shared<Connection>(s, protocol, peerAddr, false);
   }
@@ -91,12 +91,12 @@ public:
     }
   }
 
-  void handleError(sock_t s) override
+  void handleError(fd_t s) override
   {
     logger(UDP, LogLevel::ERROR, s);
   }
 
-  void handleReading(sock_t s) override
+  void handleReading(fd_t s) override
   {
     auto lsi = _listeners.find(s);
     if (lsi == _listeners.end())
@@ -125,7 +125,7 @@ public:
     }
   }
 
-  void handleWriting(sock_t) override
+  void handleWriting(fd_t) override
   {
   }
 
@@ -162,7 +162,7 @@ private:
 
   EventLoop *_loop;
   Dispatcher *_dispatcher;
-  std::unordered_map<sock_t, Protocol *> _listeners;
+  std::unordered_map<fd_t, Protocol *> _listeners;
 };
 
 } // namespace Netpp::Core

@@ -11,7 +11,6 @@
 #include "Netpp/Dns/DnsProtocol.h"
 #include "Netpp/EventLoopEpoll.h"
 #include "Netpp/Logger/Logger.h"
-#include "Netpp/SignalHandler.h"
 
 int main(int argc, char *argv[])
 {
@@ -47,8 +46,6 @@ int main(int argc, char *argv[])
   Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::WARN);
 
   Netpp::EventLoopEpoll loop{};
-  Netpp::LoopControlHandler loopControl{&loop};
-  Netpp::SignalHandler signals{&loop, &loopControl, {SIGINT, SIGTERM}};
   Netpp::Core::TimerHandler timer{&loop};
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
   Netpp::Core::UdpHandler udpHandler{&loop, &dispatcher};
@@ -93,7 +90,7 @@ int main(int argc, char *argv[])
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
   std::cout << "\nQuery time: " << duration.count() << " ms, Server: " << ns << "\n";
 
-  loopControl.stop();
+  loop.stop();
   loopThread.join();
   dispatcher.stop();
 

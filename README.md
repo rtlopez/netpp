@@ -14,7 +14,6 @@ C++ networking library educational demo
 
 ```cpp
   Netpp::EventLoopEpoll loop;
-  Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}}; // stop loop on signal
   Netpp::Core::ThreadPoll dispatcher; // route data to thread workers
   Netpp::Core::TcpHandler tcp{&loop, &dispatcher}; // handle tcp sockets events
 
@@ -31,7 +30,6 @@ C++ networking library educational demo
 
 ```cpp
   Netpp::EventLoopEpoll loop;
-  Netpp::SignalHandler signals{&loop, {SIGINT, SIGTERM}};
   Netpp::Core::SingleThreadDispatcher dispatcher;
   Netpp::Core::TcpHandler tcp{&loop, &dispatcher};
 

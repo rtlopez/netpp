@@ -25,7 +25,6 @@
 #include "Netpp/Http/HttpProtocol.h"
 #include "Netpp/Http/HttpRouter.h"
 #include "Netpp/Logger/Logger.h"
-#include "Netpp/SignalHandler.h"
 
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
@@ -116,9 +115,6 @@ int main(int argc, const char **argv)
   std::signal(SIGPIPE, sigpipe_handler);
 
   Netpp::EventLoopEpoll loop{};
-  Netpp::LoopControlHandler loopControl{&loop};
-  Netpp::SignalHandler signals{&loop, &loopControl, {SIGINT, SIGTERM}};
-
   std::unique_ptr<Netpp::Dispatcher> dispatcher;
   if (args.workerThreads > 0)
   {
