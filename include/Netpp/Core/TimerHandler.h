@@ -41,7 +41,7 @@ public:
       throw EventLoopException(err, "timerfd_create() failed");
     }
 
-    _loop->add(_fd, this);
+    _loop->add(_fd, this, false);
     logger(TIMER, LogLevel::TRACE, _fd);
   }
 
@@ -50,7 +50,7 @@ public:
     logger(TIMER, LogLevel::TRACE, _fd);
     if (_fd >= 0)
     {
-      _loop->del(_fd);
+      _loop->del(_fd, false);
       ::close(_fd);
     }
   }
@@ -117,13 +117,17 @@ private:
     MoveOnlyFunction<void()> callback;
   };
 
+  using TimerEntryPtr = std::shared_ptr<TimerEntry>;
+
   struct TimerEntryCompare
   {
-    bool operator()(const std::shared_ptr<TimerEntry> &a, const std::shared_ptr<TimerEntry> &b) const
+    bool operator()(const TimerEntryPtr &a, const TimerEntryPtr &b) const
     {
       return a->deadline > b->deadline;
     }
   };
+
+  using TimerEntryQueue = std::priority_queue<TimerEntryPtr, std::vector<TimerEntryPtr>, TimerEntryCompare>;
 
   void processTimers()
   {
@@ -204,7 +208,7 @@ private:
 
   EventLoop *_loop;
   int _fd;
-  std::priority_queue<std::shared_ptr<TimerEntry>, std::vector<std::shared_ptr<TimerEntry>>, TimerEntryCompare> _timers;
+  TimerEntryQueue _timers;
   std::unordered_set<TimerToken> _cancelledTimers;
   std::mutex _timersMutex;
   std::atomic<TimerToken> _nextTimerToken;

@@ -26,7 +26,7 @@ class EventLoopEpoll : public EventLoop
 public:
   static constexpr const char *EPOLL = "epoll";
 
-  EventLoopEpoll() : _fd(-1), _running(true), _timeout(-1), _handlers(1024)
+  EventLoopEpoll() : _handlers(1024)
   {
     _fd = ::epoll_create1(0);
 
@@ -44,7 +44,7 @@ public:
     ::close(_fd);
   }
 
-  void add(sock_t fd, EventLoopHandler *handler) override
+  void add(sock_t fd, EventLoopHandler *handler, bool refCount = true) override
   {
     assert(_fd >= 0);
 
@@ -63,6 +63,11 @@ public:
         throw EventLoopException(err, std::string("epoll_ctl(EPOLL_CTL_ADD) failed fd=") + std::to_string(fd));
       }
       addHandler(fd, handler);
+
+      if (refCount)
+      {
+        _activeRefCount.fetch_add(1, std::memory_order_relaxed);
+      }
     }
     else
     {
@@ -95,7 +100,7 @@ public:
     }
   }
 
-  void del(sock_t fd) override
+  void del(sock_t fd, bool refCount = true) override
   {
     assert(_fd >= 0);
 
@@ -114,6 +119,11 @@ public:
     }
 
     removeHandler(fd);
+
+    if (refCount)
+    {
+      _activeRefCount.fetch_sub(1, std::memory_order_relaxed);
+    }
   }
 
   void run() override
@@ -140,13 +150,19 @@ public:
       if (ret == 0)
       {
         // `epoll_wait` reached its timeout
-        logger(EPOLL, LogLevel::TRACE, "timeout");
+        logger(EPOLL, LogLevel::TRACE, "loop timeout");
         continue;
       }
 
       for (int i = 0; i < ret; i++)
       {
         handle(_events[i]);
+      }
+
+      if (_activeRefCount.load(std::memory_order_relaxed) == 0)
+      {
+        logger(EPOLL, LogLevel::INFO, "loop auto-stopping");
+        break;
       }
     }
   }
@@ -241,12 +257,14 @@ private:
   }
 
   static const size_t MAX_EVENTS = 64;
-  int _fd;
-  std::atomic<bool> _running;
-  int _timeout;
-  epoll_event _events[MAX_EVENTS];
-  std::vector<EventLoopHandler *> _handlers;
-  std::mutex _handlersMutex;
+
+  int _fd{-1};
+  std::atomic<bool> _running{true};
+  int _timeout{-1};
+  std::atomic<size_t> _activeRefCount{0};
+  epoll_event _events[MAX_EVENTS]{};
+  std::vector<EventLoopHandler *> _handlers{};
+  std::mutex _handlersMutex{};
 };
 
 } // namespace Netpp

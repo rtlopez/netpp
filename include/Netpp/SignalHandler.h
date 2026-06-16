@@ -45,7 +45,7 @@ public:
     }
 
     logger(SIGNAL, LogLevel::DEBUG, _fd);
-    _loop->add(_fd, this);
+    _loop->add(_fd, this, false);
   }
 
   ~SignalHandler()
@@ -53,7 +53,7 @@ public:
     logger(SIGNAL, LogLevel::DEBUG, _fd);
     if (_fd >= 0)
     {
-      _loop->del(_fd);
+      _loop->del(_fd, false);
       ::close(_fd);
     }
   }

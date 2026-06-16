@@ -30,13 +30,13 @@ public:
     }
 
     logger(LOOP, LogLevel::TRACE, _fd);
-    _loop->add(_fd, this);
+    _loop->add(_fd, this, false);
   }
 
   ~LoopControlHandler()
   {
     logger(LOOP, LogLevel::TRACE, _fd);
-    _loop->del(_fd);
+    _loop->del(_fd, false);
     ::close(_fd);
   }
 
