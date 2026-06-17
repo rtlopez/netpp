@@ -109,7 +109,23 @@ public:
     }
   }
 
-  void handleError(fd_t s) override
+  void handle(fd_t s, LoopEventType t) override
+  {
+    switch (t)
+    {
+    case LoopEventType::READ:
+      handleReading(s);
+      break;
+    case LoopEventType::WRITE:
+      handleWriting(s);
+      break;
+    case LoopEventType::ERROR:
+      handleError(s);
+      break;
+    }
+  }
+
+  void handleError(fd_t s)
   {
     logger(TCP, LogLevel::DEBUG, s);
     _connecting.erase(s);
@@ -126,18 +142,18 @@ public:
     close(s);
   }
 
-  void handleReading(fd_t s) override
+  void handleReading(fd_t s)
   {
     auto lsi = _listeners.find(s);
     if (lsi != _listeners.end())
     {
-      logger(TCP, LogLevel::DEBUG, "accept", s);
+      logger(TCP, LogLevel::DEBUG, s);
       auto protocol = lsi->second;
       sockaddr_in addr;
       auto as = Socket::accept(s, addr);
       if (as <= 0)
       {
-        logger(TCP, LogLevel::ERROR, "accept:error", s, as, errno, ::strerror(errno));
+        logger(TCP, LogLevel::ERROR, s, as, errno, ::strerror(errno));
         return;
       }
       auto conn = std::make_shared<Connection>(as, protocol, addr);
@@ -156,7 +172,7 @@ public:
       auto len = Socket::recv(s, data.buffer.data(), data.buffer.size(), 0);
       auto err = errno;
 
-      logger(TCP, LogLevel::DEBUG, "recv", s, len);
+      logger(TCP, LogLevel::DEBUG, s, len);
 
       if (len > 0)
       {
@@ -175,17 +191,17 @@ public:
       }
       else
       {
-        logger(TCP, LogLevel::ERROR, "recv:error", s, len, err, ::strerror(err));
+        logger(TCP, LogLevel::ERROR, s, len, err, ::strerror(err));
         handleDisconnect(conn);
         close(s);
       }
       return;
     }
 
-    logger(TCP, LogLevel::WARN, "unknown", s);
+    logger(TCP, LogLevel::WARN, s, "unkn");
   }
 
-  void handleWriting(fd_t s) override
+  void handleWriting(fd_t s)
   {
     logger(TCP, LogLevel::DEBUG, s, "begin");
 
@@ -202,7 +218,7 @@ public:
 
       if (so_error != 0)
       {
-        logger(TCP, LogLevel::ERROR, "connect:failed", s, so_error, ::strerror(so_error));
+        logger(TCP, LogLevel::ERROR, s, so_error, ::strerror(so_error));
         auto it = _connections.find(s);
         if (it != _connections.end())
         {
@@ -243,7 +259,7 @@ public:
       return;
     }
 
-    logger(TCP, LogLevel::WARN, s, "unknown");
+    logger(TCP, LogLevel::WARN, s, "unkn");
   }
 
   void send(ConnectionPtr conn, MoveOnlyFunction<DataEvent(void)> generator) override
@@ -338,7 +354,7 @@ private:
     {
       auto len = Socket::send(conn->getId(), data.buffer.data() + data.sent, data.buffer.size() - data.sent, 0);
       auto err = errno;
-      logger(TCP, LogLevel::DEBUG, conn->getId(), len, data.eventType);
+      logger(TCP, LogLevel::DEBUG, conn->getId(), len, (size_t)data.eventType);
       if (len < 0)
       {
         if (err == EAGAIN || err == EWOULDBLOCK)

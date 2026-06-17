@@ -22,11 +22,11 @@ public:
 
   ChatProtocol(TransportHandler *server) : _server(server)
   {
-    on(CONNECT, [this](ConnectionPtr conn, const DataEvent &) { handleConnect(conn); });
+    on(EventType::CONNECT, [this](ConnectionPtr conn, const DataEvent &) { handleConnect(conn); });
 
-    on(DISCONNECT, [this](ConnectionPtr conn, const DataEvent &) { handleDisconnect(conn); });
+    on(EventType::DISCONNECT, [this](ConnectionPtr conn, const DataEvent &) { handleDisconnect(conn); });
 
-    on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
+    on(EventType::DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
   }
 
   virtual ~ChatProtocol()

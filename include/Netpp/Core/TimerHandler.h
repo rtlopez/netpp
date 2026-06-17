@@ -55,6 +55,19 @@ public:
     }
   }
 
+  void handle(fd_t s, LoopEventType t) override
+  {
+    switch (t)
+    {
+    case LoopEventType::READ:
+      handleReading(s);
+      break;
+    case LoopEventType::WRITE:
+    case LoopEventType::ERROR:
+      break;
+    }
+  }
+
   TimerToken scheduleTimer(std::chrono::milliseconds delay, MoveOnlyFunction<void()> callback) override
   {
     if (!callback)
@@ -87,7 +100,7 @@ public:
     rearmTimerLocked();
   }
 
-  void handleReading(fd_t fd) override
+  void handleReading(fd_t fd)
   {
     uint64_t expirations;
     auto n = ::read(fd, &expirations, sizeof(expirations));
@@ -98,15 +111,6 @@ public:
     }
 
     processTimers();
-  }
-
-  void handleWriting(fd_t) override
-  {
-  }
-
-  void handleError(fd_t fd) override
-  {
-    logger(TIMER, LogLevel::ERROR, fd);
   }
 
 private:

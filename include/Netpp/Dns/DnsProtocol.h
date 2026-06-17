@@ -51,7 +51,7 @@ public:
       throw std::invalid_argument("DnsProtocol requires non-null udp handler and timer scheduler");
     }
 
-    on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { onData(conn, data); });
+    on(EventType::DATA, [this](ConnectionPtr conn, const DataEvent &data) { onData(conn, data); });
     _conn = _handler->openConnection(this);
   }
 

@@ -6,7 +6,7 @@
 namespace Netpp
 {
 
-enum EventType
+enum class EventType
 {
   DATA = 0,
   CONNECT = 1,
@@ -20,9 +20,9 @@ struct DataEvent
 {
   using Buffer = std::vector<uint8_t>;
 
-  Buffer buffer = Buffer{};
-  EventType eventType = DATA;
-  size_t sent = 0;
+  Buffer buffer{};
+  EventType eventType{EventType::DATA};
+  size_t sent{};
 };
 
 } // namespace Netpp

@@ -20,31 +20,31 @@ public:
   // Register a handler for an event: "connect", "disconnect", "data"
   void on(EventType eventType, EventHandlerCallback handler)
   {
-    _handlers[eventType] = std::move(handler);
+    _handlers[static_cast<size_t>(eventType)] = std::move(handler);
   }
 
   // Main event dispatch - calls registered handlers or can be overridden
   virtual void handle(ConnectionPtr conn, DataEvent data)
   {
-    if (data.eventType >= EVENT_TYPE_COUNT)
+    if (data.eventType >= EventType::EVENT_TYPE_COUNT)
     {
-      logger("protocol", LogLevel::ERROR, data.eventType, "invalid");
+      logger("protocol", LogLevel::ERROR, (size_t)data.eventType, "invalid");
       return;
     }
 
     if (hasHandler(data.eventType))
     {
-      _handlers[data.eventType](conn, data);
+      _handlers[static_cast<size_t>(data.eventType)](conn, data);
     }
   }
 
   bool hasHandler(EventType eventType) const
   {
-    return eventType < EVENT_TYPE_COUNT && _handlers[eventType] != nullptr;
+    return eventType < EventType::EVENT_TYPE_COUNT && _handlers[static_cast<size_t>(eventType)] != nullptr;
   }
 
 private:
-  std::array<EventHandlerCallback, EVENT_TYPE_COUNT> _handlers;
+  std::array<EventHandlerCallback, static_cast<size_t>(EventType::EVENT_TYPE_COUNT)> _handlers;
 };
 
 } // namespace Netpp

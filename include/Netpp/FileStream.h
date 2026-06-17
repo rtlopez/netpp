@@ -40,7 +40,7 @@ public:
       std::getline(_file, line);
       line += "\n";
       auto eventType = _file.eof() ? EventType::DISCONNECT : EventType::DATA;
-      logger(FILESTREAM, LogLevel::DEBUG, line.size(), _file.eof(), eventType);
+      logger(FILESTREAM, LogLevel::DEBUG, line.size(), _file.eof(), (size_t)eventType);
       return {.buffer = {line.begin(), line.end()}, .eventType = eventType};
     }
 
@@ -49,7 +49,7 @@ public:
     auto bytesRead = _file.gcount();
     buffer.resize(static_cast<size_t>(bytesRead));
     auto eventType = _file.eof() ? EventType::DISCONNECT : EventType::DATA;
-    logger(FILESTREAM, LogLevel::DEBUG, buffer.size(), _file.eof(), eventType);
+    logger(FILESTREAM, LogLevel::DEBUG, buffer.size(), _file.eof(), (size_t)eventType);
     return {.buffer = std::move(buffer), .eventType = eventType};
   }
 

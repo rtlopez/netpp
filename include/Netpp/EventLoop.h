@@ -14,13 +14,13 @@
 #include "Exception.h"
 #include "Netpp/EventLoopHandler.h"
 #include "Netpp/Logger/Logger.h"
+#include "Netpp/MoveOnlyFunction.h"
 #include "Netpp/Types.h"
 
 // https://medium.com/@m-ibrahim.research/mastering-epoll-the-engine-behind-high-performance-linux-networking-85a15e6bde90
 
 namespace Netpp
 {
-
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
 
@@ -28,6 +28,42 @@ class EventLoop
 {
 public:
   static constexpr const char *LOOP = "loop";
+
+  class GenericEventLoopHandler : public EventLoopHandler
+  {
+  public:
+    using HandleCallbackType = MoveOnlyFunction<void(fd_t, LoopEventType)>;
+
+    GenericEventLoopHandler() = default;
+    GenericEventLoopHandler(GenericEventLoopHandler &&) = default;
+    GenericEventLoopHandler &operator=(GenericEventLoopHandler &&) = default;
+    GenericEventLoopHandler(fd_t fd, EventLoop *loop, HandleCallbackType cb) : _fd{fd}, _loop{loop}, _cb{std::move(cb)}
+    {
+      _loop->add(_fd, this, false);
+    }
+
+    GenericEventLoopHandler(const GenericEventLoopHandler &) = delete;
+    GenericEventLoopHandler &operator=(const GenericEventLoopHandler &) = delete;
+
+    virtual ~GenericEventLoopHandler()
+    {
+      if (_fd >= 0)
+      {
+        _loop->del(_fd, false);
+        ::close(_fd);
+      }
+    }
+
+    void handle(fd_t s, LoopEventType t) override
+    {
+      _cb(s, t);
+    }
+
+  private:
+    fd_t _fd{-1};
+    EventLoop *_loop;
+    HandleCallbackType _cb;
+  };
 
   EventLoop() : _handlers(1024)
   {
@@ -39,39 +75,51 @@ public:
       logger(LOOP, LogLevel::ERROR, _fd, err, ::strerror(err));
       throw EventLoopException(err, "epoll_create1() failed");
     }
-    enableWakeUp();
-    enableSignals({SIGINT, SIGTERM});
+    // enableWakeUp();
+    // enableSignals({SIGINT, SIGTERM});
+    _wakeHandler =
+        GenericEventLoopHandler(createWakeFd(), this, [this](fd_t fd, LoopEventType t) { handleWake(fd, t); });
+    _signalHandler = GenericEventLoopHandler(createSignalFd({SIGINT, SIGTERM}), this,
+                                             [this](fd_t fd, LoopEventType t) { handleSignal(fd, t); });
   }
 
   virtual ~EventLoop()
   {
-    logger(LOOP, LogLevel::TRACE, _fd, _event_fd, _signal_fd);
-    if (_signal_fd >= 0)
-    {
-      del(_signal_fd, false);
-      ::close(_signal_fd);
-    }
-    if (_event_fd >= 0)
-    {
-      del(_event_fd, false);
-      ::close(_event_fd);
-    }
+    logger(LOOP, LogLevel::TRACE, _fd /*, _event_fd, _signal_fd*/);
+    // if (_signal_fd >= 0)
+    // {
+    //   del(_signal_fd, false);
+    //   ::close(_signal_fd);
+    // }
+    // if (_event_fd >= 0)
+    // {
+    //   del(_event_fd, false);
+    //   ::close(_event_fd);
+    // }
+    _signalHandler = {};
+    _wakeHandler = {};
     ::close(_fd);
   }
 
-  void enableWakeUp()
+  fd_t createWakeFd()
   {
-    _event_fd = ::eventfd(0, EFD_NONBLOCK);
-    if (_event_fd < 0)
+    fd_t fd = ::eventfd(0, EFD_NONBLOCK);
+    if (fd < 0)
     {
       int err = errno;
-      logger(LOOP, LogLevel::ERROR, _event_fd, err, ::strerror(err));
+      logger(LOOP, LogLevel::ERROR, fd, err, ::strerror(err));
       throw EventLoopException(err, "eventfd() failed");
     }
-    add(_event_fd, nullptr, false);
+    return fd;
   }
 
-  void enableSignals(std::initializer_list<int> signals)
+  // void enableWakeUp()
+  // {
+  //   _event_fd = createWakeFd();
+  //   add(_event_fd, nullptr, false);
+  // }
+
+  fd_t createSignalFd(std::initializer_list<int> signals)
   {
     sigset_t mask;
     ::sigemptyset(&mask);
@@ -85,13 +133,19 @@ public:
       throw EventLoopException(errno, "sigprocmask() failed");
     }
 
-    _signal_fd = ::signalfd(-1, &mask, SFD_NONBLOCK);
-    if (_signal_fd < 0)
+    fd_t fd = ::signalfd(-1, &mask, SFD_NONBLOCK);
+    if (fd < 0)
     {
       throw EventLoopException(errno, "signalfd() failed");
     }
-    add(_signal_fd, nullptr, false);
+    return fd;
   }
+
+  // void enableSignals(std::initializer_list<int> signals)
+  // {
+  //   _signal_fd = createSignalFd(signals);
+  //   add(_signal_fd, nullptr, false);
+  // }
 
   void add(fd_t fd, EventLoopHandler *handler, bool refCount = true)
   {
@@ -235,37 +289,38 @@ public:
 private:
   void handle(const epoll_event &ev)
   {
-    if (ev.data.fd == _event_fd)
-    {
-      handleWake();
-      return;
-    }
+    // if (ev.data.fd == _event_fd)
+    // {
+    //   handleWake(_event_fd, LoopEventType::READ);
+    //   return;
+    // }
 
-    if (ev.data.fd == _signal_fd)
-    {
-      handleSignal();
-      return;
-    }
+    // if (ev.data.fd == _signal_fd)
+    // {
+    //   handleSignal(_signal_fd, LoopEventType::READ);
+    //   return;
+    // }
 
     auto handler = getHandler(ev.data.fd);
-    logger(LOOP, LogLevel::TRACE, ev.data.fd, ev.events, !!handler);
     if (!handler)
     {
+      logger(LOOP, LogLevel::DEBUG, ev.data.fd, ev.events, !!handler);
       return;
     }
 
     if (ev.events & (EPOLLERR | EPOLLHUP))
     {
-      handler->handleError(ev.data.fd);
+      logger(LOOP, LogLevel::DEBUG, ev.data.fd, ev.events, "err");
+      handler->handle(ev.data.fd, LoopEventType::ERROR);
       return;
     }
 
     if (ev.events & EPOLLOUT)
     {
-      handler->handleWriting(ev.data.fd);
+      handler->handle(ev.data.fd, LoopEventType::WRITE);
     }
 
-    // re-check: handleWriting may have closed and removed this fd
+    // re-check: handle WRITE/ERROR may have closed and removed fd from loop
     handler = getHandler(ev.data.fd);
     if (!handler)
     {
@@ -274,24 +329,24 @@ private:
 
     if (ev.events & (EPOLLIN | EPOLLPRI))
     {
-      handler->handleReading(ev.data.fd);
+      handler->handle(ev.data.fd, LoopEventType::READ);
     }
   }
 
-  void handleWake()
+  void handleWake(fd_t fd, LoopEventType)
   {
     uint64_t val;
-    auto n = ::read(_event_fd, &val, sizeof(val));
+    auto n = ::read(fd, &val, sizeof(val));
     if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
     {
-      logger(LOOP, LogLevel::WARN, _event_fd, errno, ::strerror(errno));
+      logger(LOOP, LogLevel::WARN, fd, errno, ::strerror(errno));
     }
   }
 
-  void handleSignal()
+  void handleSignal(fd_t fd, LoopEventType)
   {
     signalfd_siginfo info;
-    ssize_t len = ::read(_signal_fd, &info, sizeof(info));
+    ssize_t len = ::read(fd, &info, sizeof(info));
     if (len == sizeof(info))
     {
       logger(LOOP, LogLevel::INFO, "Caught signal", info.ssi_signo);
@@ -347,14 +402,16 @@ private:
   static const size_t MAX_EVENTS = 64;
 
   fd_t _fd{-1};
-  fd_t _event_fd{-1};
-  fd_t _signal_fd{-1};
+  // fd_t _event_fd{-1};
+  // fd_t _signal_fd{-1};
   std::atomic<bool> _running{true};
   std::atomic<size_t> _activeRefCount{0};
   int _timeout{-1};
   epoll_event _events[MAX_EVENTS]{};
   std::vector<EventLoopHandler *> _handlers{};
   std::mutex _handlersMutex{};
+  GenericEventLoopHandler _wakeHandler;
+  GenericEventLoopHandler _signalHandler;
 };
 
 } // namespace Netpp

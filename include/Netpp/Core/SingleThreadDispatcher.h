@@ -70,7 +70,7 @@ public:
         if (!sendFunc(conn, data))
         {
           // not all chunk data were sent, we need to reply drain, push back to queue front
-          return DrainResult::Partial; // EAGAIN, wait for next handleWriting
+          return DrainResult::Partial; // EAGAIN, wait for next handle WRITE
         }
       }
 

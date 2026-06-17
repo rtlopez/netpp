@@ -130,7 +130,7 @@ public:
           // not all chunk data were sent, we need to reply drain, push back to queue front
           queue.push_front(std::move(data));
 
-          return DrainResult::Partial; // EAGAIN, wait for next handleWriting
+          return DrainResult::Partial; // EAGAIN, wait for next handle WRITE
         }
       }
 

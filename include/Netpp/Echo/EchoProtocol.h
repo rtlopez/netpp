@@ -20,7 +20,7 @@ public:
 
   EchoProtocol(TransportHandler *server) : _server(server)
   {
-    on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
+    on(EventType::DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
   }
 
   virtual ~EchoProtocol()

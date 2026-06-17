@@ -24,7 +24,22 @@ public:
     _loop->add(STDIN_FILENO, this);
   }
 
-  void handleReading(fd_t s) override
+  void handle(fd_t s, LoopEventType t) override
+  {
+    switch (t)
+    {
+    case LoopEventType::READ:
+      handleReading(s);
+      break;
+    case LoopEventType::ERROR:
+      handleError(s);
+      break;
+    default:
+      break;
+    }
+  }
+
+  void handleReading(fd_t s)
   {
     // read a line from stdin and send to receiver callback
     std::string line;
@@ -38,12 +53,7 @@ public:
     _receiver(line);
   }
 
-  void handleWriting(fd_t) override
-  {
-    // not used for stdin
-  }
-
-  void handleError(fd_t s) override
+  void handleError(fd_t s)
   {
     // log error and stop loop
     logger(STDIN, LogLevel::DEBUG, s, "error");

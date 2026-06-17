@@ -24,11 +24,11 @@ public:
 
   HttpClientProtocol(Core::TcpHandler *handler) : _handler(handler)
   {
-    on(CONNECT, [this](ConnectionPtr conn, const DataEvent &) { onConnect(conn); });
-    on(DATA, [this](ConnectionPtr conn, const DataEvent &data) { onData(conn, data); });
-    on(DISCONNECT, [this](ConnectionPtr conn, const DataEvent &) { onDisconnect(conn); });
-    on(ERROR, [this](ConnectionPtr conn, const DataEvent &) { onError(conn); });
-    on(TIMEOUT, [this](ConnectionPtr conn, const DataEvent &) { onTimeout(conn); });
+    on(EventType::CONNECT, [this](ConnectionPtr conn, const DataEvent &) { onConnect(conn); });
+    on(EventType::DATA, [this](ConnectionPtr conn, const DataEvent &data) { onData(conn, data); });
+    on(EventType::DISCONNECT, [this](ConnectionPtr conn, const DataEvent &) { onDisconnect(conn); });
+    on(EventType::ERROR, [this](ConnectionPtr conn, const DataEvent &) { onError(conn); });
+    on(EventType::TIMEOUT, [this](ConnectionPtr conn, const DataEvent &) { onTimeout(conn); });
   }
 
   /// Initiates an async GET request. Returns a future that will hold the response

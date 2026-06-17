@@ -91,17 +91,25 @@ public:
     }
   }
 
-  void handleError(fd_t s) override
+  void handle(fd_t s, LoopEventType t) override
   {
-    logger(UDP, LogLevel::ERROR, s);
+    switch (t)
+    {
+    case LoopEventType::READ:
+      handleReading(s);
+      break;
+    case LoopEventType::WRITE:
+    case LoopEventType::ERROR:
+      break;
+    }
   }
 
-  void handleReading(fd_t s) override
+  void handleReading(fd_t s)
   {
     auto lsi = _listeners.find(s);
     if (lsi == _listeners.end())
     {
-      logger(UDP, LogLevel::WARN, s, "unknown");
+      logger(UDP, LogLevel::WARN, s, "unkn");
       return;
     }
 
@@ -111,7 +119,7 @@ public:
     auto len = Socket::recvfrom(s, data.buffer.data(), data.buffer.size(), 0, addr);
     auto err = errno;
 
-    logger(UDP, LogLevel::DEBUG, s, "recvfrom", len);
+    logger(UDP, LogLevel::DEBUG, s, len);
 
     if (len > 0)
     {
@@ -121,12 +129,8 @@ public:
     }
     else if (len < 0 && err != EAGAIN && err != EWOULDBLOCK)
     {
-      logger(UDP, LogLevel::ERROR, s, "recvfrom:error", len, err, ::strerror(err));
+      logger(UDP, LogLevel::ERROR, s, len, err, ::strerror(err));
     }
-  }
-
-  void handleWriting(fd_t) override
-  {
   }
 
   void send(ConnectionPtr conn, DataEvent data) override
@@ -138,10 +142,10 @@ public:
 
     auto len = Socket::sendto(conn->getId(), data.buffer.data(), data.buffer.size(), 0, conn->getPeerAddr());
     auto err = errno;
-    logger(UDP, LogLevel::DEBUG, conn->getId(), "sendto", len);
+    logger(UDP, LogLevel::DEBUG, conn->getId(), len);
     if (len < 0 && err != EAGAIN && err != EWOULDBLOCK)
     {
-      logger(UDP, LogLevel::ERROR, conn->getId(), "sendto:error", len, err, ::strerror(err));
+      logger(UDP, LogLevel::ERROR, conn->getId(), len, err, ::strerror(err));
     }
   }
 

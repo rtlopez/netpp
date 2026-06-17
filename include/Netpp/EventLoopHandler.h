@@ -8,9 +8,7 @@ namespace Netpp
 class EventLoopHandler
 {
 public:
-  virtual void handleReading(fd_t s) = 0;
-  virtual void handleWriting(fd_t s) = 0;
-  virtual void handleError(fd_t s) = 0;
+  virtual void handle(fd_t s, LoopEventType t) = 0;
 };
 
 } // namespace Netpp
