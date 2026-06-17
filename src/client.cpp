@@ -9,6 +9,7 @@
 #include "Netpp/DataEvent.h"
 #include "Netpp/EventLoop.h"
 #include "Netpp/Logger/Logger.h"
+#include "Netpp/MoveOnlyFunction.h"
 #include "Netpp/Protocol.h"
 #include "Netpp/TransportHandler.h"
 
@@ -18,7 +19,8 @@ static constexpr uint16_t ECHO_PORT = 1236;
 class ClientProtocol : public Netpp::Protocol
 {
 public:
-  ClientProtocol(Netpp::EventLoop *loop, Netpp::TransportHandler *handler) : _loop(loop), _handler(handler)
+  ClientProtocol(Netpp::TransportHandler *handler, Netpp::MoveOnlyFunction<void()> onDisconnect)
+      : _handler(handler), _onDisconnect(std::move(onDisconnect))
   {
     on(Netpp::EventType::CONNECT, [this](Netpp::ConnectionPtr conn, const Netpp::DataEvent &) {
       // store connection for sending data from stdin handler
@@ -28,7 +30,7 @@ public:
     on(Netpp::EventType::DISCONNECT, [this](Netpp::ConnectionPtr, const Netpp::DataEvent &) {
       // stop loop on disconnection
       _conn.reset();
-      _loop->stop();
+      _onDisconnect();
     });
 
     on(Netpp::EventType::DATA, [](Netpp::ConnectionPtr, const Netpp::DataEvent &data) {
@@ -52,9 +54,9 @@ public:
   }
 
 private:
-  Netpp::EventLoop *_loop;
   Netpp::TransportHandler *_handler;
   Netpp::ConnectionWeakPtr _conn;
+  Netpp::MoveOnlyFunction<void()> _onDisconnect;
 };
 
 int main()
@@ -70,7 +72,7 @@ int main()
   Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
   Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timer};
 
-  ClientProtocol protocol{&loop, &tcpHandler};
+  ClientProtocol protocol{&tcpHandler, [&loop]() { loop.stop(); }};
   Netpp::Core::StdinHandler stdinHandler{&loop, [&protocol](const std::string &line) { protocol.send(line); }};
 
   tcpHandler.connect(ECHO_HOST, ECHO_PORT, &protocol);
