@@ -218,8 +218,7 @@ public:
       auto it = _connections.find(s);
       if (it != _connections.end())
       {
-        auto conn = it->second;
-        handleConnect(conn);
+        handleConnect(it->second);
       }
       return;
     }

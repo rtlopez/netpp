@@ -237,24 +237,13 @@ private:
   {
     if (ev.data.fd == _event_fd)
     {
-      uint64_t val;
-      auto n = ::read(_event_fd, &val, sizeof(val));
-      if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-      {
-        logger(LOOP, LogLevel::WARN, _event_fd, errno, ::strerror(errno));
-      }
+      handleWake();
       return;
     }
 
     if (ev.data.fd == _signal_fd)
     {
-      signalfd_siginfo info;
-      ssize_t len = ::read(_signal_fd, &info, sizeof(info));
-      if (len == sizeof(info))
-      {
-        logger(LOOP, LogLevel::INFO, "Caught signal", info.ssi_signo);
-        _running.store(false, std::memory_order_relaxed);
-      }
+      handleSignal();
       return;
     }
 
@@ -286,6 +275,27 @@ private:
     if (ev.events & (EPOLLIN | EPOLLPRI))
     {
       handler->handleReading(ev.data.fd);
+    }
+  }
+
+  void handleWake()
+  {
+    uint64_t val;
+    auto n = ::read(_event_fd, &val, sizeof(val));
+    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+    {
+      logger(LOOP, LogLevel::WARN, _event_fd, errno, ::strerror(errno));
+    }
+  }
+
+  void handleSignal()
+  {
+    signalfd_siginfo info;
+    ssize_t len = ::read(_signal_fd, &info, sizeof(info));
+    if (len == sizeof(info))
+    {
+      logger(LOOP, LogLevel::INFO, "Caught signal", info.ssi_signo);
+      _running.store(false, std::memory_order_relaxed);
     }
   }
 
