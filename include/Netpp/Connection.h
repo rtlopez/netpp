@@ -23,7 +23,7 @@ class Connection
 {
 public:
   static constexpr const char *CONN = "conn";
-  Connection(fd_t s, Protocol *protocol, const sockaddr_in &peerAddr, bool ownsSocket = true)
+  Connection(fd_t s, Protocol *protocol, const SockAddr &peerAddr, bool ownsSocket = true)
       : _s(s), _protocol(protocol), _peerAddr(peerAddr), _ownsSocket(ownsSocket)
   {
     logger(CONN, LogLevel::DEBUG, _s);
@@ -48,7 +48,7 @@ public:
     return Socket::getpeername(_peerAddr);
   }
 
-  const sockaddr_in &getPeerAddr() const
+  const SockAddr &getPeerAddr() const
   {
     return _peerAddr;
   }
@@ -157,7 +157,7 @@ public:
 private:
   fd_t _s;
   Protocol *_protocol;
-  sockaddr_in _peerAddr{};
+  SockAddr _peerAddr;
   bool _ownsSocket = true;
 
   // Protocol-specific context (type-erased)

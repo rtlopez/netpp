@@ -21,8 +21,13 @@ add_executable(MoveOnlyFunctionTest MoveOnlyFunctionTest.cpp)
 target_link_libraries(MoveOnlyFunctionTest GTest::gtest_main)
 target_include_directories(MoveOnlyFunctionTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
+add_executable(SockAddrTest SockAddrTest.cpp)
+target_link_libraries(SockAddrTest GTest::gtest_main)
+target_include_directories(SockAddrTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
 include(GoogleTest)
 gtest_discover_tests(HttpMessageTest)
 gtest_discover_tests(RingBufferTest)
 gtest_discover_tests(DnsParserTest)
 gtest_discover_tests(MoveOnlyFunctionTest)
+gtest_discover_tests(SockAddrTest)

@@ -40,7 +40,8 @@ public:
   void listen(const char *addr, uint16_t port, Protocol *protocol)
   {
     logger(TCP, LogLevel::DEBUG, addr, port);
-    auto s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+    auto bindAddr = SockAddr::from(addr, port);
+    auto s = Socket::create(bindAddr.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     Socket::bind(s, addr, port);
     Socket::listen(s, 500);
     _listeners.emplace(s, protocol);
@@ -56,8 +57,9 @@ public:
     }
 
     logger(TCP, LogLevel::DEBUG, "connect", host, port);
-    auto s = Socket::create(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
-    sockaddr_in addr;
+    auto connectAddr = SockAddr::from(host, port);
+    auto s = Socket::create(connectAddr.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+    SockAddr addr;
     int ret = Socket::connect(s, host, port, addr);
 
     auto conn = std::make_shared<Connection>(s, protocol, addr);
@@ -149,7 +151,7 @@ public:
     {
       logger(TCP, LogLevel::DEBUG, s);
       auto protocol = lsi->second;
-      sockaddr_in addr;
+      SockAddr addr;
       auto as = Socket::accept(s, addr);
       if (as <= 0)
       {

@@ -32,15 +32,16 @@ public:
   void listen(const char *addr, uint16_t port, Protocol *protocol)
   {
     logger(UDP, LogLevel::DEBUG, addr, port);
-    fd_t s = open(protocol);
+    auto bindAddr = SockAddr::from(addr, port);
+    fd_t s = open(protocol, bindAddr.family());
     Socket::bind(s, addr, port);
   }
 
   /// Open an unbound UDP socket for client use and register it for receiving.
   /// The OS assigns an ephemeral port on first sendto.
-  fd_t open(Protocol *protocol)
+  fd_t open(Protocol *protocol, int family = AF_INET)
   {
-    fd_t s = Socket::create(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
+    fd_t s = Socket::create(family, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
     logger(UDP, LogLevel::DEBUG, s);
     _listeners.emplace(s, protocol);
     _loop->add(s, this);
@@ -63,20 +64,16 @@ public:
   ConnectionPtr openConnection(Protocol *protocol)
   {
     fd_t s = open(protocol);
-    return std::make_shared<Connection>(s, protocol, sockaddr_in{}, false);
+    return std::make_shared<Connection>(s, protocol, SockAddr{}, false);
   }
 
   ConnectionPtr createConnection(ConnectionPtr conn, Protocol *protocol, const std::string &peerAddr, uint16_t port)
   {
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr(peerAddr.c_str());
-
+    auto addr = SockAddr::from(peerAddr.c_str(), port);
     return createConnection(conn->getId(), protocol, addr);
   }
 
-  ConnectionPtr createConnection(fd_t s, Protocol *protocol, const sockaddr_in &peerAddr)
+  ConnectionPtr createConnection(fd_t s, Protocol *protocol, const SockAddr &peerAddr)
   {
     return std::make_shared<Connection>(s, protocol, peerAddr, false);
   }
@@ -114,7 +111,7 @@ public:
     }
 
     auto protocol = lsi->second;
-    sockaddr_in addr;
+    SockAddr addr;
     DataEvent data{DataEvent::Buffer(65536)};
     auto len = Socket::recvfrom(s, data.buffer.data(), data.buffer.size(), 0, addr);
     auto err = errno;

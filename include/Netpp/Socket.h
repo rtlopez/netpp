@@ -10,6 +10,7 @@
 
 #include "Netpp/Exception.h"
 #include "Netpp/Logger/Logger.h"
+#include "Netpp/SockAddr.h"
 #include "Netpp/Types.h"
 namespace Netpp
 {
@@ -46,16 +47,15 @@ public:
     return ::recv(fd, buf, len, flags);
   }
 
-  static ssize_t sendto(fd_t fd, const void *buf, size_t len, int flags, const sockaddr_in &addr)
+  static ssize_t sendto(fd_t fd, const void *buf, size_t len, int flags, const SockAddr &addr)
   {
-    return ::sendto(fd, buf, len, flags, (const sockaddr *)&addr, sizeof(addr));
+    return ::sendto(fd, buf, len, flags, addr.addr(), addr.len());
   }
 
-  static ssize_t recvfrom(fd_t fd, void *buf, size_t len, int flags, sockaddr_in &addr)
+  static ssize_t recvfrom(fd_t fd, void *buf, size_t len, int flags, SockAddr &addr)
   {
-    socklen_t addr_len = sizeof(addr);
-    std::memset(&addr, 0, sizeof(addr));
-    return ::recvfrom(fd, buf, len, flags, (sockaddr *)&addr, &addr_len);
+    addr.reset();
+    return ::recvfrom(fd, buf, len, flags, addr.addr(), &addr.len());
   }
 
   static int bind(fd_t fd, const char *bind_addr, uint16_t bind_port)
@@ -70,14 +70,9 @@ public:
     //   throw SocketException(errno, "setsockopt(SO_REUSEPORT) failed");
     // }
 
-    sockaddr_in addr;
-    socklen_t addr_len = sizeof(addr);
-    std::memset(&addr, 0, addr_len);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(bind_port);
-    addr.sin_addr.s_addr = inet_addr(bind_addr);
+    auto addr = SockAddr::from(bind_addr, bind_port);
 
-    int ret = ::bind(fd, (sockaddr *)&addr, addr_len);
+    int ret = ::bind(fd, addr.addr(), addr.len());
     int err = errno;
 
     if (ret < 0)
@@ -107,12 +102,11 @@ public:
     return ret;
   }
 
-  static int accept(fd_t fd, sockaddr_in &addr)
+  static int accept(fd_t fd, SockAddr &addr)
   {
-    socklen_t addr_len = sizeof(sockaddr_in);
-    std::memset(&addr, 0, sizeof(sockaddr_in));
+    addr.reset();
 
-    fd_t afd = ::accept(fd, (sockaddr *)&addr, &addr_len);
+    fd_t afd = ::accept(fd, addr.addr(), &addr.len());
     int err = errno;
 
     if (afd < 0)
@@ -148,15 +142,11 @@ public:
     return afd;
   }
 
-  static int connect(fd_t fd, const char *host, uint16_t port, sockaddr_in &addr)
+  static int connect(fd_t fd, const char *host, uint16_t port, SockAddr &addr)
   {
-    socklen_t addr_len = sizeof(addr);
-    std::memset(&addr, 0, addr_len);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr(host);
+    addr = SockAddr::from(host, port);
 
-    int ret = ::connect(fd, (sockaddr *)&addr, addr_len);
+    int ret = ::connect(fd, addr.addr(), addr.len());
     int err = errno;
 
     if (ret < 0 && err != EINPROGRESS)
@@ -191,19 +181,15 @@ public:
 
   static const std::string getpeername(fd_t fd)
   {
-    sockaddr_in addr;
-    socklen_t addr_size = sizeof(sockaddr_in);
-    ::getpeername(fd, (sockaddr *)&addr, &addr_size);
+    SockAddr addr;
+    addr.reset();
+    ::getpeername(fd, addr.addr(), &addr.len());
     return getpeername(addr);
   }
 
-  static const std::string getpeername(const sockaddr_in &addr)
+  static const std::string getpeername(const SockAddr &addr)
   {
-    uint16_t port = addr.sin_port;
-    const in_addr_t *saddr = &addr.sin_addr.s_addr;
-    char ip_str[INET_ADDRSTRLEN];
-    const char *clientip = ::inet_ntop(AF_INET, saddr, ip_str, INET_ADDRSTRLEN);
-    return std::string{clientip} + std::string{":"} + std::to_string(port);
+    return addr.toString();
   }
 };
 
