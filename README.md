@@ -5,9 +5,11 @@ C++ networking library educational demo
 ## Features
 
 * Event loop (epoll)
-* Tcp server
-* Echo server
-* Http server
+* Tcp client/server
+* Http client/server
+* Udp client/server
+* Echo client/server
+* Dns client
 * CMake build
 
 ## HTTP Server example
@@ -72,7 +74,7 @@ python3 src/server_test.py
 
 * Unit tests
 * Config file
-* Configurable logger
+* more logger sinks
 
 # Licence
 
