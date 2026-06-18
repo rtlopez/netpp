@@ -9,6 +9,7 @@ class EventLoopHandler
 {
 public:
   virtual void handle(fd_t s, LoopEventType t) = 0;
+  virtual ~EventLoopHandler() = default;
 };
 
 } // namespace Netpp

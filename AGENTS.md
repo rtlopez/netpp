@@ -43,6 +43,7 @@ ctest --test-dir build
 - Use `std::shared_ptr`/`std::unique_ptr` consistently with existing interfaces.
 - Keep error handling explicit; log meaningful context for socket and protocol failures.
 - Avoid overly clever abstractions; prioritize readable code.
+- in case of callback argument, prefer `Netpp::MoveOnlyFunction` type
 
 ## Networking and Runtime Expectations
 
