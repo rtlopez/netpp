@@ -17,7 +17,12 @@ target_link_libraries(RingBufferTest GTest::gtest_main)
 add_executable(DnsParserTest DnsParserTest.cpp)
 target_link_libraries(DnsParserTest GTest::gtest_main netpp_dns)
 
+add_executable(MoveOnlyFunctionTest MoveOnlyFunctionTest.cpp)
+target_link_libraries(MoveOnlyFunctionTest GTest::gtest_main)
+target_include_directories(MoveOnlyFunctionTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
 include(GoogleTest)
 gtest_discover_tests(HttpMessageTest)
 gtest_discover_tests(RingBufferTest)
 gtest_discover_tests(DnsParserTest)
+gtest_discover_tests(MoveOnlyFunctionTest)

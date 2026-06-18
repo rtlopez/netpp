@@ -9,10 +9,21 @@ namespace Netpp
 template <typename Signature>
 class MoveOnlyFunction;
 
+/*
+ * Optimized version of std::function for move-only lambdas.
+ *
+ * Use it if you must transfer ownership of the lambda.
+ * Disallow constructing function that allows copy semantics.
+ * For performance reasons, it uses SBO (Small Buffer Optimization).
+ * So that you can only capture few small variables, up to 72 bytes.
+ * Total size of functor is limited to 96 bytes (72+24).
+ *
+ * TIP: Bigger captures should be taken via smart or raw pointers.
+ */
 template <typename R, typename... Args>
 class MoveOnlyFunction<R(Args...)>
 {
-  static constexpr size_t SBO_SIZE = 64;
+  static constexpr size_t SBO_SIZE = 72;
   static constexpr size_t SBO_ALIGN = alignof(std::max_align_t);
 
 public:
@@ -23,8 +34,9 @@ public:
   {
     using Decay = std::decay_t<F>;
     static_assert(std::is_move_constructible_v<Decay>, "Callback must be move constructible");
-    static_assert(sizeof(Decay) <= SBO_SIZE && alignof(Decay) <= SBO_ALIGN,
-                  "Callback must fit in SBO buffer (64 bytes, max_align_t alignment)");
+    static_assert(
+        sizeof(Decay) <= SBO_SIZE && alignof(Decay) <= SBO_ALIGN,
+        "Callback captures must fit in SBO buffer (72 bytes). consider using smart-pointer to pass larger objects");
 
     _invoke = [](void *storage, Args &&...args) -> R {
       return (*static_cast<Decay *>(storage))(std::forward<Args>(args)...);
