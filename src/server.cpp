@@ -197,7 +197,8 @@ int main(int argc, const char **argv)
     res.headers["content-length"] = std::to_string(size);
     res.headers["content-type"] = "text/plain";
 
-    res.setGenerator(Netpp::FileStream{filename.string(), std::move(file)});
+    auto stream = std::make_unique<Netpp::FileStream>(filename.string(), std::move(file));
+    res.setGenerator([stream = std::move(stream)]() { return (*stream)(); });
   });
 
   loop.run();

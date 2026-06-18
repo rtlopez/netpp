@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <memory>
 #include <mutex>
 #include <queue>
 #include <sys/timerfd.h>
@@ -81,7 +80,7 @@ public:
 
     {
       std::scoped_lock lock(_timersMutex);
-      _timers.push(std::make_shared<TimerEntry>(TimerEntry{deadline, token, std::move(callback)}));
+      _timers.push(TimerEntry{deadline, token, std::move(callback)});
       rearmTimerLocked();
     }
 
@@ -121,17 +120,15 @@ private:
     MoveOnlyFunction<void()> callback;
   };
 
-  using TimerEntryPtr = std::shared_ptr<TimerEntry>;
-
   struct TimerEntryCompare
   {
-    bool operator()(const TimerEntryPtr &a, const TimerEntryPtr &b) const
+    bool operator()(const TimerEntry &a, const TimerEntry &b) const
     {
-      return a->deadline > b->deadline;
+      return a.deadline > b.deadline;
     }
   };
 
-  using TimerEntryQueue = std::priority_queue<TimerEntryPtr, std::vector<TimerEntryPtr>, TimerEntryCompare>;
+  using TimerEntryQueue = std::priority_queue<TimerEntry, std::vector<TimerEntry>, TimerEntryCompare>;
 
   void processTimers()
   {
@@ -143,22 +140,22 @@ private:
 
       while (!_timers.empty())
       {
-        auto timer = _timers.top();
-        if (timer->deadline > now)
+        if (_timers.top().deadline > now)
         {
           break;
         }
 
+        auto timer = std::move(const_cast<TimerEntry &>(_timers.top()));
         _timers.pop();
 
-        auto cancelled = _cancelledTimers.find(timer->token);
+        auto cancelled = _cancelledTimers.find(timer.token);
         if (cancelled != _cancelledTimers.end())
         {
           _cancelledTimers.erase(cancelled);
           continue;
         }
 
-        callbacks.emplace_back(std::move(timer->callback));
+        callbacks.emplace_back(std::move(timer.callback));
       }
 
       rearmTimerLocked();
@@ -177,7 +174,7 @@ private:
   {
     while (!_timers.empty())
     {
-      auto cancelled = _cancelledTimers.find(_timers.top()->token);
+      auto cancelled = _cancelledTimers.find(_timers.top().token);
       if (cancelled == _cancelledTimers.end())
       {
         break;
@@ -191,7 +188,7 @@ private:
     if (!_timers.empty())
     {
       auto now = std::chrono::steady_clock::now();
-      auto diff = _timers.top()->deadline - now;
+      auto diff = _timers.top().deadline - now;
       if (diff <= std::chrono::steady_clock::duration::zero())
       {
         diff = std::chrono::nanoseconds(1);
