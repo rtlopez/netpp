@@ -111,6 +111,18 @@ public:
     return "(unknown)";
   }
 
+  /// Check if a string is a valid numeric IPv4 or IPv6 address.
+  static bool isValidIP(const char *host)
+  {
+    struct in_addr v4;
+    if (::inet_pton(AF_INET, host, &v4) == 1)
+    {
+      return true;
+    }
+    struct in6_addr v6;
+    return ::inet_pton(AF_INET6, host, &v6) == 1;
+  }
+
   /// Reset to a zeroed state suitable for accept()/recvfrom() output.
   void reset()
   {

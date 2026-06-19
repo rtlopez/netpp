@@ -95,7 +95,7 @@ Core::TcpHandler &Stack::tcp()
 {
   if (!_impl->tcp)
   {
-    _impl->tcp = std::make_unique<Core::TcpHandler>(&loop(), &dispatcher(), &timer());
+    _impl->tcp = std::make_unique<Core::TcpHandler>(&loop(), &dispatcher(), &timer(), &dns());
   }
   return *_impl->tcp;
 }
@@ -114,7 +114,7 @@ Dns::DnsProtocol &Stack::dns()
   if (!_impl->dns)
   {
     _impl->dns = std::make_unique<Dns::DnsProtocol>(&udp(), &timer(), _config.dnsNameserver.c_str(), _config.dnsPort,
-                                                     _config.dnsTimeout);
+                                                    _config.dnsTimeout);
   }
   return *_impl->dns;
 }

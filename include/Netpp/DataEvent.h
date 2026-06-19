@@ -13,7 +13,8 @@ enum class EventType
   DISCONNECT = 2,
   ERROR = 3,
   TIMEOUT = 4,
-  EVENT_TYPE_COUNT = 5,
+  RESOLVED = 5,
+  EVENT_TYPE_COUNT = 6,
 };
 
 struct DataEvent

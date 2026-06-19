@@ -18,6 +18,7 @@
 #include "Netpp/EventLoopHandler.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
+#include "Netpp/Resolver.h"
 #include "Netpp/Socket.h"
 #include "Netpp/TimerScheduler.h"
 #include "Netpp/TransportHandler.h"
@@ -32,8 +33,8 @@ class TcpHandler : public EventLoopHandler, public TransportHandler
 public:
   static constexpr const char *TCP = "tcp";
 
-  TcpHandler(EventLoop *loop, Dispatcher *dispatcher, TimerScheduler *timer = nullptr)
-      : _loop(loop), _dispatcher(dispatcher), _timer(timer)
+  TcpHandler(EventLoop *loop, Dispatcher *dispatcher, TimerScheduler *timer, Resolver *resolver)
+      : _loop(loop), _dispatcher(dispatcher), _timer(timer), _resolver(resolver)
   {
   }
 
@@ -48,61 +49,41 @@ public:
     _loop->add(s, this);
   }
 
-  ConnectionWeakPtr connect(const char *host, uint16_t port, Protocol *protocol,
-                            std::chrono::milliseconds timeout = std::chrono::milliseconds{0})
+  void connect(const char *host, uint16_t port, Protocol *protocol,
+               std::chrono::milliseconds timeout = std::chrono::milliseconds{0},
+               std::shared_ptr<void> context = nullptr)
   {
     if (timeout.count() > 0 && !_timer)
     {
       throw std::logic_error("TcpHandler connect timeout requires TimerScheduler");
     }
 
-    logger(TCP, LogLevel::DEBUG, "connect", host, port);
-    auto connectAddr = SockAddr::from(host, port);
-    auto s = Socket::create(connectAddr.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
-    SockAddr addr;
-    int ret = Socket::connect(s, host, port, addr);
-
-    auto conn = std::make_shared<Connection>(s, protocol, addr);
-    _connections.emplace(s, conn);
-
-    if (timeout.count() > 0)
+    // If resolver is available and host is not a numeric IP, resolve asynchronously first
+    if (_resolver && !SockAddr::isValidIP(host))
     {
-      auto token = _timer->scheduleTimer(timeout, [this, s]() { onConnectTimeout(s); });
-      if (token != TimerScheduler::INVALID_TIMER)
-      {
-        _connectTimeouts.emplace(s, token);
-      }
+      logger(TCP, LogLevel::DEBUG, "connect:resolve", host, port);
+      _resolver->resolve(std::string(host),
+                         [this, port, protocol, timeout, ctx = std::move(context)](const std::string &ip) {
+                           onResolved(ip, port, protocol, timeout, ctx);
+                         });
+      return;
     }
 
-    if (ret == 0)
-    {
-      // immediate connect (rare for non-blocking)
-      //_loop->add(s, this);
-      // handleConnect(conn);
-      _connecting.emplace(s);
-      _loop->add(s, this);
-      _loop->mod(s, true); // enable EPOLLOUT to detect connect completion
-    }
-    else
-    {
-      // EINPROGRESS - wait for writable event to confirm connection
-      _connecting.emplace(s);
-      _loop->add(s, this);
-      _loop->mod(s, true); // enable EPOLLOUT to detect connect completion
-    }
-
-    return conn;
+    connectToAddress(host, port, protocol, timeout, std::move(context));
   }
 
   virtual ~TcpHandler()
   {
     logger(TCP, LogLevel::DEBUG, _listeners.size());
 
-    for (auto &[s, token] : _connectTimeouts)
+    if (_timer)
     {
-      _timer->cancelTimer(token);
+      for (auto &[s, token] : _connectTimeouts)
+      {
+        _timer->cancelTimer(token);
+      }
+      _connectTimeouts.clear();
     }
-    _connectTimeouts.clear();
 
     for (auto &[s, protocol] : _listeners)
     {
@@ -275,6 +256,67 @@ public:
   }
 
 private:
+  void connectToAddress(const char *host, uint16_t port, Protocol *protocol, std::chrono::milliseconds timeout,
+                        std::shared_ptr<void> context)
+  {
+    logger(TCP, LogLevel::DEBUG, "connect", host, port);
+    auto connectAddr = SockAddr::from(host, port);
+    auto s = Socket::create(connectAddr.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+    SockAddr addr;
+    Socket::connect(s, host, port, addr);
+
+    auto conn = std::make_shared<Connection>(s, protocol, addr);
+    if (context)
+    {
+      conn->setContext(std::move(context));
+    }
+    _connections.emplace(s, conn);
+
+    if (_timer && timeout.count() > 0)
+    {
+      auto token = _timer->scheduleTimer(timeout, [this, s]() { onConnectTimeout(s); });
+      if (token != TimerScheduler::INVALID_TIMER)
+      {
+        _connectTimeouts.emplace(s, token);
+      }
+    }
+
+    // EINPROGRESS or immediate - register for EPOLLOUT to detect connect completion
+    _connecting.emplace(s);
+    _loop->add(s, this);
+    _loop->mod(s, true);
+
+    handleResolved(conn);
+  }
+
+  void onResolved(const std::string &ip, uint16_t port, Protocol *protocol, std::chrono::milliseconds timeout,
+                  std::shared_ptr<void> context)
+  {
+    if (ip.empty())
+    {
+      logger(TCP, LogLevel::ERROR, "connect:resolve:failed");
+      return;
+    }
+
+    logger(TCP, LogLevel::DEBUG, "connect:resolved", ip, port);
+    connectToAddress(ip.c_str(), port, protocol, timeout, std::move(context));
+  }
+
+  void handleResolved(ConnectionPtr conn)
+  {
+    if (conn->getProtocol()->hasHandler(Netpp::EventType::RESOLVED))
+    {
+      DataEvent data{.eventType = Netpp::EventType::RESOLVED};
+      ConnectionWeakPtr weak{conn};
+      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+        if (auto conn = weak.lock())
+        {
+          conn->getProtocol()->handle(conn, std::move(data));
+        }
+      });
+    }
+  }
+
   void handleConnect(ConnectionPtr conn)
   {
     if (conn->getProtocol()->hasHandler(Netpp::EventType::CONNECT))
@@ -428,6 +470,7 @@ private:
   EventLoop *_loop;
   Dispatcher *_dispatcher;
   TimerScheduler *_timer;
+  Resolver *_resolver;
   std::unordered_map<fd_t, Protocol *> _listeners;
   std::unordered_map<fd_t, ConnectionPtr> _connections;
   std::unordered_map<fd_t, TimerScheduler::TimerToken> _connectTimeouts;

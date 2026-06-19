@@ -17,6 +17,7 @@
 #include "Netpp/Dns/DnsParser.h"
 #include "Netpp/Logger/Logger.h"
 #include "Netpp/Protocol.h"
+#include "Netpp/Resolver.h"
 #include "Netpp/TimerScheduler.h"
 
 namespace Netpp::Dns
@@ -36,7 +37,7 @@ using Logger::LogLevel;
 ///   // ... event loop running ...
 ///   DnsMessage response = future.get();
 ///   for (auto &a : response.answers) { ... }
-class DnsProtocol : public Protocol
+class DnsProtocol : public Protocol, public Resolver
 {
 public:
   static constexpr const char *DNS = "dns";
@@ -74,7 +75,14 @@ public:
       if (!ctx->fulfilled)
       {
         ctx->fulfilled = true;
-        ctx->promise.set_exception(std::make_exception_ptr(std::runtime_error("dns resolver stopped")));
+        if (ctx->resolveCallback)
+        {
+          ctx->resolveCallback(std::string{});
+        }
+        else
+        {
+          ctx->promise.set_exception(std::make_exception_ptr(std::runtime_error("dns resolver stopped")));
+        }
       }
     }
   }
@@ -109,12 +117,42 @@ public:
     return future;
   }
 
+  /// Resolver interface: resolve a hostname asynchronously via callback.
+  /// On success, callback receives the resolved IP string.
+  /// On failure (timeout, no records), callback receives an empty string.
+  void resolve(const std::string &host, Resolver::Callback callback) override
+  {
+    ensureConnection();
+
+    auto ctx = std::make_shared<QueryContext>();
+    uint16_t id = 0;
+
+    {
+      std::lock_guard lock(_pendingMutex);
+      id = generateIdLocked();
+      _pending[id] = ctx;
+    }
+
+    auto msg = DnsMessage::query(host, DnsType::A, id);
+
+    logger(DNS, LogLevel::DEBUG, "resolve:cb", host, id);
+
+    ctx->name = host;
+    ctx->type = DnsType::A;
+    ctx->resolveCallback = std::move(callback);
+    ctx->timerToken = _timer->scheduleTimer(_queryTimeout, [this, id]() { onTimeout(id); });
+
+    auto wire = DnsParser::serialize(msg);
+    sendQuery(std::move(wire));
+  }
+
 private:
   struct QueryContext
   {
     std::string name;
     DnsType type;
     std::promise<DnsMessage> promise;
+    Resolver::Callback resolveCallback; // when set, callback-based resolve (Resolver interface)
     bool fulfilled = false;
     TimerScheduler::TimerToken timerToken = TimerScheduler::INVALID_TIMER;
   };
@@ -141,8 +179,15 @@ private:
     {
       logger(DNS, LogLevel::WARN, "timeout", id, ctx->name, typeToString(ctx->type));
       ctx->fulfilled = true;
-      ctx->promise.set_exception(
-          std::make_exception_ptr(std::runtime_error("dns query timeout (connect or response)")));
+      if (ctx->resolveCallback)
+      {
+        ctx->resolveCallback(std::string{});
+      }
+      else
+      {
+        ctx->promise.set_exception(
+            std::make_exception_ptr(std::runtime_error("dns query timeout (connect or response)")));
+      }
     }
 
     if (lastQuery)
@@ -188,7 +233,28 @@ private:
       if (!ctx->fulfilled)
       {
         ctx->fulfilled = true;
-        ctx->promise.set_value(std::move(msg));
+        if (ctx->resolveCallback)
+        {
+          std::string ip;
+          for (auto &answer : msg.answers)
+          {
+            if (answer.type == DnsType::A)
+            {
+              ip = answer.rdataAsIPv4();
+              break;
+            }
+            if (answer.type == DnsType::AAAA)
+            {
+              ip = answer.rdataAsIPv6();
+              break;
+            }
+          }
+          ctx->resolveCallback(ip);
+        }
+        else
+        {
+          ctx->promise.set_value(std::move(msg));
+        }
       }
 
       if (lastQuery)

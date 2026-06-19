@@ -49,16 +49,7 @@ public:
     ctx->path = path;
     auto future = ctx->promise.get_future();
 
-    auto connWeak = _handler->connect(host, port, this, connectTimeout);
-    if (auto conn = connWeak.lock())
-    {
-      conn->setContext(ctx);
-    }
-    else
-    {
-      logger(HTTPC, LogLevel::DEBUG, "error");
-      ctx->promise.set_exception(std::make_exception_ptr(std::runtime_error("failed to initiate connection")));
-    }
+    _handler->connect(host, port, this, connectTimeout, ctx);
 
     return future;
   }

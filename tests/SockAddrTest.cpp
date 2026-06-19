@@ -225,3 +225,32 @@ TEST(SockAddrTest, MutableLenRef)
   ref = sizeof(sockaddr_in);
   EXPECT_EQ(sa.len(), sizeof(sockaddr_in));
 }
+
+// ── isValidIP ────────────────────────────────────────────────────────
+
+TEST(SockAddrTest, IsValidIPv4)
+{
+  EXPECT_TRUE(SockAddr::isValidIP("127.0.0.1"));
+  EXPECT_TRUE(SockAddr::isValidIP("0.0.0.0"));
+  EXPECT_TRUE(SockAddr::isValidIP("255.255.255.255"));
+  EXPECT_TRUE(SockAddr::isValidIP("192.168.1.1"));
+}
+
+TEST(SockAddrTest, IsValidIPv6)
+{
+  EXPECT_TRUE(SockAddr::isValidIP("::1"));
+  EXPECT_TRUE(SockAddr::isValidIP("::"));
+  EXPECT_TRUE(SockAddr::isValidIP("fe80::1"));
+  EXPECT_TRUE(SockAddr::isValidIP("2001:db8::1"));
+  EXPECT_TRUE(SockAddr::isValidIP("::ffff:192.168.1.1"));
+}
+
+TEST(SockAddrTest, IsValidIPReturnsFalseForHostnames)
+{
+  EXPECT_FALSE(SockAddr::isValidIP("example.com"));
+  EXPECT_FALSE(SockAddr::isValidIP("localhost"));
+  EXPECT_FALSE(SockAddr::isValidIP("my-server.local"));
+  EXPECT_FALSE(SockAddr::isValidIP(""));
+  EXPECT_FALSE(SockAddr::isValidIP("not.an.ip.address"));
+  EXPECT_FALSE(SockAddr::isValidIP("999.999.999.999"));
+}
