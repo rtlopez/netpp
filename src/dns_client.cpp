@@ -1,16 +1,9 @@
-#include <future>
 #include <iostream>
 #include <string>
-#include <thread>
-#include <unistd.h>
 
-#include "Netpp/Core/SingleThreadDispatcher.h"
-#include "Netpp/Core/TimerHandler.h"
-#include "Netpp/Core/UdpHandler.h"
 #include "Netpp/Dns/DnsMessage.h"
 #include "Netpp/Dns/DnsProtocol.h"
-#include "Netpp/EventLoop.h"
-#include "Netpp/Logger/Logger.h"
+#include "Netpp/Stack.h"
 
 int main(int argc, char *argv[])
 {
@@ -40,27 +33,15 @@ int main(int argc, char *argv[])
 
   Netpp::Dns::DnsType type = stringToDnsType(record);
 
-  auto logHandler = std::make_unique<Netpp::Logger::LogHandlerSimple>(
-      std::make_unique<Netpp::Logger::LogFormatterSimple>(), std::make_unique<Netpp::Logger::LogWriterConsole>());
-  Netpp::Logger::Logger::getInstance()->addHandler(std::move(logHandler));
-  Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::WARN);
-
-  Netpp::EventLoop loop{};
-  Netpp::Core::TimerHandler timer{&loop};
-  Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
-  Netpp::Core::UdpHandler udpHandler{&loop, &dispatcher};
-
-  Netpp::Dns::DnsProtocol dns{&udpHandler, &timer, ns};
+  Netpp::Stack stack({.logLevel = Netpp::Logger::LogLevel::WARN, .dnsNameserver = ns});
 
   auto start = std::chrono::steady_clock::now();
-  auto future = dns.resolve(name, type);
+  auto future = stack.dns().resolve(name, type);
 
-  std::thread loopThread([&loop]() { loop.run(); });
+  stack.run(); // blocks until query completes (socket auto-unregisters)
 
   try
   {
-    future.wait();
-
     auto response = future.get();
 
     std::cout << "DNS response for: " << name << ", ";
@@ -89,10 +70,6 @@ int main(int argc, char *argv[])
   auto end = std::chrono::steady_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
   std::cout << "\nQuery time: " << duration.count() << " ms, Server: " << ns << "\n";
-
-  loop.stop();
-  loopThread.join();
-  dispatcher.stop();
 
   return 0;
 }

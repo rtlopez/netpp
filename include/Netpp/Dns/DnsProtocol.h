@@ -52,12 +52,11 @@ public:
     }
 
     on(EventType::DATA, [this](ConnectionPtr conn, const DataEvent &data) { onData(conn, data); });
-    _conn = _handler->openConnection(this);
   }
 
   virtual ~DnsProtocol()
   {
-    _handler->unregister(_conn);
+    unregisterConnection();
 
     std::unordered_map<uint16_t, std::shared_ptr<QueryContext>> pending;
     {
@@ -84,6 +83,8 @@ public:
   /// The caller must ensure the event loop is running.
   std::future<DnsMessage> resolve(const std::string &name, DnsType type = DnsType::A)
   {
+    ensureConnection();
+
     auto ctx = std::make_shared<QueryContext>();
     uint16_t id = 0;
 
@@ -121,6 +122,7 @@ private:
   void onTimeout(uint16_t id)
   {
     std::shared_ptr<QueryContext> ctx;
+    bool lastQuery = false;
 
     {
       std::lock_guard lock(_pendingMutex);
@@ -132,6 +134,7 @@ private:
 
       ctx = it->second;
       _pending.erase(it);
+      lastQuery = _pending.empty();
     }
 
     if (!ctx->fulfilled)
@@ -140,6 +143,11 @@ private:
       ctx->fulfilled = true;
       ctx->promise.set_exception(
           std::make_exception_ptr(std::runtime_error("dns query timeout (connect or response)")));
+    }
+
+    if (lastQuery)
+    {
+      unregisterConnection();
     }
   }
 
@@ -157,6 +165,8 @@ private:
       logger(DNS, LogLevel::DEBUG, "response", msg.header.id, rcodeToString(msg.header.rcode), msg.header.ancount);
 
       std::shared_ptr<QueryContext> ctx;
+      bool lastQuery = false;
+
       {
         std::lock_guard lock(_pendingMutex);
         auto it = _pending.find(msg.header.id);
@@ -167,6 +177,7 @@ private:
         }
         ctx = it->second;
         _pending.erase(it);
+        lastQuery = _pending.empty();
       }
 
       if (ctx->timerToken != TimerScheduler::INVALID_TIMER)
@@ -178,6 +189,11 @@ private:
       {
         ctx->fulfilled = true;
         ctx->promise.set_value(std::move(msg));
+      }
+
+      if (lastQuery)
+      {
+        unregisterConnection();
       }
     }
     catch (const DnsParseError &e)
@@ -193,6 +209,23 @@ private:
     _handler->send(conn, std::move(data));
 
     logger(DNS, LogLevel::DEBUG, conn->getId());
+  }
+
+  void ensureConnection()
+  {
+    if (!_conn)
+    {
+      _conn = _handler->openConnection(this);
+    }
+  }
+
+  void unregisterConnection()
+  {
+    if (_conn)
+    {
+      _handler->unregister(_conn);
+      _conn.reset();
+    }
   }
 
   uint16_t generateIdLocked()

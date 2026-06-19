@@ -1,16 +1,12 @@
 #include <iostream>
 #include <string>
-#include <unistd.h>
 
-#include "Netpp/Core/SingleThreadDispatcher.h"
 #include "Netpp/Core/StdinHandler.h"
 #include "Netpp/Core/TcpHandler.h"
-#include "Netpp/Core/TimerHandler.h"
 #include "Netpp/DataEvent.h"
-#include "Netpp/EventLoop.h"
-#include "Netpp/Logger/Logger.h"
 #include "Netpp/MoveOnlyFunction.h"
 #include "Netpp/Protocol.h"
+#include "Netpp/Stack.h"
 #include "Netpp/TransportHandler.h"
 
 static constexpr const char *ECHO_HOST = "127.0.0.1";
@@ -61,24 +57,14 @@ private:
 
 int main()
 {
-  auto logHandler = std::make_unique<Netpp::Logger::LogHandlerSimple>(
-      std::make_unique<Netpp::Logger::LogFormatterSimple>(), std::make_unique<Netpp::Logger::LogWriterConsole>());
+  Netpp::Stack stack({.logLevel = Netpp::Logger::LogLevel::DEBUG});
 
-  Netpp::Logger::Logger::getInstance()->addHandler(std::move(logHandler));
-  Netpp::Logger::Logger::getInstance()->setLevel(Netpp::Logger::LogLevel::DEBUG);
+  ClientProtocol protocol{&stack.tcp(), [&stack]() { stack.stop(); }};
+  Netpp::Core::StdinHandler stdinHandler{&stack.loop(), [&protocol](const std::string &line) { protocol.send(line); }};
 
-  Netpp::EventLoop loop;
-  Netpp::Core::TimerHandler timer{&loop};
-  Netpp::Core::SingleThreadDispatcher dispatcher{&loop};
-  Netpp::Core::TcpHandler tcpHandler{&loop, &dispatcher, &timer};
+  stack.tcp().connect(ECHO_HOST, ECHO_PORT, &protocol);
 
-  ClientProtocol protocol{&tcpHandler, [&loop]() { loop.stop(); }};
-  Netpp::Core::StdinHandler stdinHandler{&loop, [&protocol](const std::string &line) { protocol.send(line); }};
-
-  tcpHandler.connect(ECHO_HOST, ECHO_PORT, &protocol);
-
-  loop.run();
-  dispatcher.stop();
+  stack.run();
 
   return 0;
 }

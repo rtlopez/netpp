@@ -14,17 +14,14 @@
 #include <lyra/lyra.hpp>
 
 #include "Netpp/Chat/ChatProtocol.h"
-#include "Netpp/Core/SingleThreadDispatcher.h"
 #include "Netpp/Core/TcpHandler.h"
-#include "Netpp/Core/ThreadPoolDispatcher.h"
 #include "Netpp/Core/UdpHandler.h"
 #include "Netpp/DataEvent.h"
 #include "Netpp/Echo/EchoProtocol.h"
-#include "Netpp/EventLoop.h"
 #include "Netpp/FileStream.h"
 #include "Netpp/Http/HttpProtocol.h"
 #include "Netpp/Http/HttpRouter.h"
-#include "Netpp/Logger/Logger.h"
+#include "Netpp/Stack.h"
 
 using Netpp::Logger::logger;
 using Netpp::Logger::LogLevel;
@@ -104,28 +101,22 @@ int main(int argc, const char **argv)
 
   CliArgs args{argc, argv};
 
-  auto logHandler = std::make_unique<Netpp::Logger::LogHandlerSimple>(
-      std::make_unique<Netpp::Logger::LogFormatterSimple>(), std::make_unique<Netpp::Logger::LogWriterConsole>());
+  Netpp::StackConfig config;
+  if (args.workerThreads > 0)
+  {
+    config.dispatcherType = Netpp::StackConfig::DispatcherType::ThreadPool;
+    config.threadPoolSize = static_cast<size_t>(args.workerThreads);
+  }
+  config.logLevel = args.logLevel;
 
-  Netpp::Logger::Logger::getInstance()->addHandler(std::move(logHandler));
-  Netpp::Logger::Logger::getInstance()->setLevel(args.logLevel);
+  Netpp::Stack stack(config);
 
   logger(SERVER, LogLevel::INFO, "Starting server", "log-level:", Netpp::Logger::logLevelToName(args.logLevel));
 
   std::signal(SIGPIPE, sigpipe_handler);
 
-  Netpp::EventLoop loop{};
-  std::unique_ptr<Netpp::Dispatcher> dispatcher;
-  if (args.workerThreads > 0)
-  {
-    dispatcher.reset(new Netpp::Core::ThreadPoolDispatcher(&loop, args.workerThreads));
-  }
-  else
-  {
-    dispatcher.reset(new Netpp::Core::SingleThreadDispatcher(&loop));
-  }
-  Netpp::Core::TcpHandler tcp{&loop, dispatcher.get()};
-  Netpp::Core::UdpHandler udp{&loop, dispatcher.get()};
+  auto &tcp = stack.tcp();
+  auto &udp = stack.udp();
 
   Netpp::Chat::ChatProtocol chat{&tcp};
   Netpp::Echo::EchoProtocol echoUdp{&udp}; // działa bez zmian w logice
@@ -201,9 +192,7 @@ int main(int argc, const char **argv)
     res.setGenerator([stream = std::move(stream)]() { return (*stream)(); });
   });
 
-  loop.run();
-
-  dispatcher->stop();
+  stack.run();
 
   logger(SERVER, LogLevel::INFO, "Server stopping");
 

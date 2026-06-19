@@ -4,45 +4,104 @@ C++ networking library educational demo
 
 ## Features
 
-* Event loop (epoll)
+* Event loop (epoll) with auto-stop on idle
 * Tcp client/server
 * Http client/server
 * Udp client/server
 * Echo client/server
 * Dns client
+* Stack facade (factory + dependency injection)
 * CMake build
+
+## Stack
+
+`Netpp::Stack` is a facade that owns and lazily creates all infrastructure
+(EventLoop, Dispatcher, TimerHandler, transports, protocols). Dependencies are
+wired automatically on first access.
+
+```cpp
+// Config struct
+Netpp::Stack stack({
+    .dispatcherType = Netpp::StackConfig::DispatcherType::ThreadPool,
+    .threadPoolSize = 8,
+    .logLevel = Netpp::Logger::LogLevel::INFO,
+});
+
+// Or fluent builder
+auto stack = Netpp::Stack::builder()
+    .threadPool(8)
+    .logLevel(Netpp::Logger::LogLevel::INFO)
+    .build();
+```
+
+## HTTP Client example
+
+```cpp
+Netpp::Stack stack({.logLevel = Netpp::Logger::LogLevel::DEBUG});
+
+auto future = stack.httpClient().get("example.com", 80, "/");
+
+stack.run(); // blocks, auto-stops when connection closes
+
+auto response = future.get();
+std::cout << response.str() << "\n";
+```
+
+## DNS Client example
+
+```cpp
+Netpp::Stack stack({.dnsNameserver = "8.8.8.8"});
+
+auto future = stack.dns().resolve("example.com", Netpp::Dns::DnsType::A);
+
+stack.run(); // blocks, auto-stops when query completes
+
+auto response = future.get();
+for (auto &a : response.answers) {
+    std::cout << a.name << " " << a.rdataString << "\n";
+}
+```
 
 ## HTTP Server example
 
 ```cpp
-  Netpp::EventLoop loop;
-  Netpp::Core::ThreadPollDispatcher dispatcher; // route data to thread workers
-  Netpp::Core::TcpHandler tcp{&loop, &dispatcher}; // handle tcp sockets events
+Netpp::Stack stack({
+    .dispatcherType = Netpp::StackConfig::DispatcherType::ThreadPool,
+    .threadPoolSize = 16,
+});
 
-  Netpp::Http::HttpProtocol http(&tcp); // protocol handler
+auto &tcp = stack.tcp();
 
-  tcp.listen("127.0.0.1", 1234, &http); // bind protocol to port
+Netpp::Http::HttpProtocol http{&tcp};
+Netpp::Http::HttpRouter router;
 
-  loop.run(); // run processing loop
+tcp.listen("127.0.0.1", 1234, &http);
 
-  dispatcher.stop(); // join threads before destroing objects
+http.addMiddleware([&router](auto &req, auto &res, auto conn) {
+    router.handle(req, res, conn);
+});
+
+router.on("GET", "/", [](auto &, auto &res, auto) {
+    res.setBody("<h1>Hello</h1>");
+});
+
+stack.run(); // blocks until signal (Ctrl+C)
 ```
 
 ## Chat and Echo server example
 
 ```cpp
-  Netpp::EventLoop loop;
-  Netpp::Core::SingleThreadDispatcher dispatcher;
-  Netpp::Core::TcpHandler tcp{&loop, &dispatcher};
+Netpp::Stack stack;
 
-  Netpp::Chat::ChatProtocol chat{&tcp};
-  Netpp::Echo::EchoProtocol echo(&tcp);
+auto &tcp = stack.tcp();
 
-  tcp.listen("127.0.0.1", 1235, &chat);
-  tcp.listen("127.0.0.1", 1236, &echo);
+Netpp::Chat::ChatProtocol chat{&tcp};
+Netpp::Echo::EchoProtocol echo{&tcp};
 
-  loop.run();
-  dispatcher.stop();
+tcp.listen("127.0.0.1", 1235, &chat);
+tcp.listen("127.0.0.1", 1236, &echo);
+
+stack.run();
 ```
 
 # Configuring and Building
@@ -75,8 +134,9 @@ python3 src/server_test.py
 * Unit tests
 * Config file
 * more logger sinks
+* HTTP client DNS resolution
+* Response read timeout
 
 # Licence
 
 This project is distributed under MIT Licence.
-
