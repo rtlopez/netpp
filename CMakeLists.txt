@@ -17,7 +17,17 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/bfgroup/Lyra.git
     GIT_TAG 1.8.0
 )
-FetchContent_MakeAvailable(lyra)
+
+FetchContent_Declare(
+    ada
+    GIT_REPOSITORY https://github.com/ada-url/ada.git
+    GIT_TAG v3.2.4
+)
+set(ADA_TESTING OFF CACHE BOOL "" FORCE)
+set(ADA_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(ADA_TOOLS OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(lyra ada)
 
 find_package(Threads REQUIRED)
 
