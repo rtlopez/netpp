@@ -58,7 +58,7 @@ public:
     return ::recvfrom(fd, buf, len, flags, addr.addr(), &addr.len());
   }
 
-  static int bind(fd_t fd, const char *bind_addr, uint16_t bind_port)
+  static int bind(fd_t fd, const SockAddr &addr)
   {
     const int enable = 1;
     if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
@@ -69,8 +69,6 @@ public:
     // {
     //   throw SocketException(errno, "setsockopt(SO_REUSEPORT) failed");
     // }
-
-    auto addr = SockAddr::from(bind_addr, bind_port);
 
     int ret = ::bind(fd, addr.addr(), addr.len());
     int err = errno;
@@ -142,20 +140,18 @@ public:
     return afd;
   }
 
-  static int connect(fd_t fd, const char *host, uint16_t port, SockAddr &addr)
+  static int connect(fd_t fd, SockAddr &addr)
   {
-    addr = SockAddr::from(host, port);
-
     int ret = ::connect(fd, addr.addr(), addr.len());
     int err = errno;
 
     if (ret < 0 && err != EINPROGRESS)
     {
-      logger(SOCKET, LogLevel::ERROR, fd, host, port, ret, err, ::strerror(err));
+      logger(SOCKET, LogLevel::ERROR, fd, addr.toString(), ret, err, ::strerror(err));
       throw SocketException(err, "connect() failed");
     }
 
-    logger(SOCKET, LogLevel::TRACE, fd, host, port, ret);
+    logger(SOCKET, LogLevel::TRACE, fd, addr.toString(), ret);
     return ret;
   }
 

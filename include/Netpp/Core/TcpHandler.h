@@ -38,34 +38,42 @@ public:
   {
   }
 
-  void listen(const char *addr, uint16_t port, Protocol *protocol)
+  void listen(const char *ip, uint16_t port, Protocol *protocol)
   {
-    logger(TCP, LogLevel::DEBUG, addr, port);
-    auto bindAddr = SockAddr::from(addr, port);
-    auto s = Socket::create(bindAddr.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
-    Socket::bind(s, addr, port);
+    logger(TCP, LogLevel::DEBUG, ip, port);
+    auto addr = SockAddr::from(ip, port);
+    auto s = Socket::create(addr.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+    Socket::bind(s, addr);
     Socket::listen(s, 500);
     _listeners.emplace(s, protocol);
     _loop->add(s, this);
   }
 
-  void connect(const char *host, uint16_t port, Protocol *protocol,
+  void connect(std::string host, uint16_t port, Protocol *protocol,
                std::chrono::milliseconds timeout = std::chrono::milliseconds{0},
                std::shared_ptr<void> context = nullptr)
   {
     if (timeout.count() > 0 && !_timer)
     {
-      throw std::logic_error("TcpHandler connect timeout requires TimerScheduler");
+      throw std::logic_error("TcpHandler connect requires Timer for timeout");
     }
 
     // If resolver is available and host is not a numeric IP, resolve asynchronously first
-    if (_resolver && !SockAddr::isValidIP(host))
+    if (!SockAddr::isValidIP(host.c_str()))
     {
+      if (!_resolver)
+      {
+        throw std::logic_error("TcpHandler connect requires Resolver for non-numeric host");
+      }
       logger(TCP, LogLevel::DEBUG, "connect:resolve", host, port);
-      _resolver->resolve(std::string(host),
-                         [this, port, protocol, timeout, ctx = std::move(context)](const std::string &ip) {
-                           onResolved(ip, port, protocol, timeout, ctx);
-                         });
+      auto onResolved = [this, port, protocol, timeout, ctx = std::move(context)](std::string ip) {
+        if (!ip.empty())
+        {
+          logger(TCP, LogLevel::DEBUG, "connect:resolved", ip, port);
+          connectToAddress(ip, port, protocol, timeout, std::move(ctx));
+        }
+      };
+      _resolver->resolve(std::move(host), std::move(onResolved));
       return;
     }
 
@@ -256,16 +264,15 @@ public:
   }
 
 private:
-  void connectToAddress(const char *host, uint16_t port, Protocol *protocol, std::chrono::milliseconds timeout,
+  void connectToAddress(const std::string &ip, uint16_t port, Protocol *protocol, std::chrono::milliseconds timeout,
                         std::shared_ptr<void> context)
   {
-    logger(TCP, LogLevel::DEBUG, "connect", host, port);
-    auto connectAddr = SockAddr::from(host, port);
-    auto s = Socket::create(connectAddr.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
-    SockAddr addr;
-    Socket::connect(s, host, port, addr);
+    logger(TCP, LogLevel::DEBUG, "connect", ip, port);
+    auto addr = SockAddr::from(ip.c_str(), port);
+    auto s = Socket::create(addr.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+    Socket::connect(s, addr);
 
-    auto conn = std::make_shared<Connection>(s, protocol, addr);
+    auto conn = std::make_shared<Connection>(s, protocol, std::move(addr));
     if (context)
     {
       conn->setContext(std::move(context));
@@ -287,19 +294,6 @@ private:
     _loop->mod(s, true);
 
     handleResolved(conn);
-  }
-
-  void onResolved(const std::string &ip, uint16_t port, Protocol *protocol, std::chrono::milliseconds timeout,
-                  std::shared_ptr<void> context)
-  {
-    if (ip.empty())
-    {
-      logger(TCP, LogLevel::ERROR, "connect:resolve:failed");
-      return;
-    }
-
-    logger(TCP, LogLevel::DEBUG, "connect:resolved", ip, port);
-    connectToAddress(ip.c_str(), port, protocol, timeout, std::move(context));
   }
 
   void handleResolved(ConnectionPtr conn)

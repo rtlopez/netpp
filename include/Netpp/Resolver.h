@@ -13,7 +13,7 @@ namespace Netpp
 class Resolver
 {
 public:
-  using Callback = MoveOnlyFunction<void(const std::string &resolvedIp)>;
+  using Callback = MoveOnlyFunction<void(std::string ip)>;
 
   virtual ~Resolver() = default;
 

@@ -39,17 +39,17 @@ public:
   ///   auto future = protocol.get("example.com", 80, "/index.html");
   ///   // ... event loop is running ...
   ///   HttpResponse response = future.get(); // blocks until response arrives
-  std::future<HttpResponse> get(const char *host, uint16_t port, const std::string &path,
+  std::future<HttpResponse> get(std::string host, uint16_t port, std::string path,
                                 std::chrono::milliseconds connectTimeout = std::chrono::seconds(5))
   {
     logger(HTTPC, LogLevel::DEBUG, host, port, path, connectTimeout.count());
 
     auto ctx = std::make_shared<RequestContext>();
-    ctx->host = host;
-    ctx->path = path;
+    ctx->host = std::move(host);
+    ctx->path = std::move(path);
     auto future = ctx->promise.get_future();
 
-    _handler->connect(host, port, this, connectTimeout, ctx);
+    _handler->connect(ctx->host, port, this, connectTimeout, ctx);
 
     return future;
   }

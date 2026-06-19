@@ -72,18 +72,7 @@ public:
         _timer->cancelTimer(ctx->timerToken);
       }
 
-      if (!ctx->fulfilled)
-      {
-        ctx->fulfilled = true;
-        if (ctx->resolveCallback)
-        {
-          ctx->resolveCallback(std::string{});
-        }
-        else
-        {
-          ctx->promise.set_exception(std::make_exception_ptr(std::runtime_error("dns resolver stopped")));
-        }
-      }
+      fulfillError(ctx, std::make_exception_ptr(std::runtime_error("dns resolver stopped")));
     }
   }
 
@@ -177,18 +166,10 @@ private:
 
     if (!ctx->fulfilled)
     {
-      logger(DNS, LogLevel::WARN, "timeout", id, ctx->name, typeToString(ctx->type));
-      ctx->fulfilled = true;
-      if (ctx->resolveCallback)
-      {
-        ctx->resolveCallback(std::string{});
-      }
-      else
-      {
-        ctx->promise.set_exception(
-            std::make_exception_ptr(std::runtime_error("dns query timeout (connect or response)")));
-      }
+      logger(DNS, LogLevel::WARN, id, ctx->name, typeToString(ctx->type), "timeout");
     }
+
+    fulfillError(ctx, std::make_exception_ptr(std::runtime_error("dns query timeout")));
 
     if (lastQuery)
     {
@@ -204,20 +185,19 @@ private:
       return;
     }
 
+    std::shared_ptr<QueryContext> ctx;
     try
     {
       auto msg = DnsParser::parse(data.buffer.data(), data.buffer.size());
       logger(DNS, LogLevel::DEBUG, "response", msg.header.id, rcodeToString(msg.header.rcode), msg.header.ancount);
 
-      std::shared_ptr<QueryContext> ctx;
       bool lastQuery = false;
-
       {
         std::lock_guard lock(_pendingMutex);
         auto it = _pending.find(msg.header.id);
         if (it == _pending.end())
         {
-          logger(DNS, LogLevel::WARN, "unexpected id", msg.header.id);
+          logger(DNS, LogLevel::WARN, msg.header.id, "unexpected");
           return;
         }
         ctx = it->second;
@@ -230,32 +210,7 @@ private:
         _timer->cancelTimer(ctx->timerToken);
       }
 
-      if (!ctx->fulfilled)
-      {
-        ctx->fulfilled = true;
-        if (ctx->resolveCallback)
-        {
-          std::string ip;
-          for (auto &answer : msg.answers)
-          {
-            if (answer.type == DnsType::A)
-            {
-              ip = answer.rdataAsIPv4();
-              break;
-            }
-            if (answer.type == DnsType::AAAA)
-            {
-              ip = answer.rdataAsIPv6();
-              break;
-            }
-          }
-          ctx->resolveCallback(ip);
-        }
-        else
-        {
-          ctx->promise.set_value(std::move(msg));
-        }
-      }
+      fulfillSuccess(ctx, std::move(msg));
 
       if (lastQuery)
       {
@@ -265,6 +220,53 @@ private:
     catch (const DnsParseError &e)
     {
       logger(DNS, LogLevel::ERROR, e.what());
+      fulfillError(ctx, std::make_exception_ptr(e));
+    }
+  }
+
+  void fulfillSuccess(std::shared_ptr<QueryContext> ctx, DnsMessage msg)
+  {
+    if (!ctx->fulfilled)
+    {
+      ctx->fulfilled = true;
+      if (ctx->resolveCallback)
+      {
+        std::string ip;
+        for (auto &answer : msg.answers)
+        {
+          if (answer.type == DnsType::A)
+          {
+            ip = answer.rdataAsIPv4();
+            break;
+          }
+          if (answer.type == DnsType::AAAA)
+          {
+            ip = answer.rdataAsIPv6();
+            break;
+          }
+        }
+        ctx->resolveCallback(std::move(ip));
+      }
+      else
+      {
+        ctx->promise.set_value(std::move(msg));
+      }
+    }
+  }
+
+  void fulfillError(std::shared_ptr<QueryContext> ctx, std::exception_ptr error)
+  {
+    if (!ctx->fulfilled)
+    {
+      ctx->fulfilled = true;
+      if (ctx->resolveCallback)
+      {
+        ctx->resolveCallback({});
+      }
+      else
+      {
+        ctx->promise.set_exception(error);
+      }
     }
   }
 

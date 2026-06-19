@@ -29,12 +29,12 @@ public:
   {
   }
 
-  void listen(const char *addr, uint16_t port, Protocol *protocol)
+  void listen(const std::string &ip, uint16_t port, Protocol *protocol)
   {
-    logger(UDP, LogLevel::DEBUG, addr, port);
-    auto bindAddr = SockAddr::from(addr, port);
-    fd_t s = open(protocol, bindAddr.family());
-    Socket::bind(s, addr, port);
+    logger(UDP, LogLevel::DEBUG, ip, port);
+    auto addr = SockAddr::from(ip.c_str(), port);
+    fd_t s = open(protocol, addr.family());
+    Socket::bind(s, addr);
   }
 
   /// Open an unbound UDP socket for client use and register it for receiving.
