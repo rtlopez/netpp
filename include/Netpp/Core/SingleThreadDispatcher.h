@@ -63,6 +63,7 @@ public:
     while (!queue.empty())
     {
       auto &data = queue.front();
+      auto eventType = data.eventType;
 
       // drain if needed
       if (data.sent < data.buffer.size())
@@ -74,17 +75,22 @@ public:
         }
       }
 
-      if (data.eventType == EventType::DISCONNECT)
+      if (eventType == EventType::DISCONNECT)
       {
         // no need to pop as connection destructor will do it
         return DrainResult::Close; // chunk with close flag
       }
 
       queue.pop_front();
+
+      if (eventType == EventType::DONE)
+      {
+        return DrainResult::Done;
+      }
     }
 
     _loop->mod(conn->getId(), false);
-    return DrainResult::Done;
+    return DrainResult::Sent;
   }
 };
 

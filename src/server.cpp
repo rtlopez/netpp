@@ -119,7 +119,7 @@ int main(int argc, const char **argv)
   auto &udp = stack.udp();
 
   Netpp::Chat::ChatProtocol chat{&tcp};
-  Netpp::Echo::EchoProtocol echoUdp{&udp}; // działa bez zmian w logice
+  Netpp::Echo::EchoProtocol echoUdp{&udp};
   Netpp::Echo::EchoProtocol echoTcp{&tcp};
   Netpp::Http::HttpProtocol http{&tcp};
 
@@ -162,7 +162,7 @@ int main(int argc, const char **argv)
     res.setGenerator([counter = 0]() mutable -> Netpp::DataEvent {
       counter++;
       std::string data = "line " + std::to_string(counter) + "\n";
-      auto eventType = counter >= 5 ? Netpp::EventType::DISCONNECT : Netpp::EventType::DATA;
+      auto eventType = counter >= 5 ? Netpp::EventType::DONE : Netpp::EventType::DATA;
       return {.buffer = {data.begin(), data.end()}, .eventType = eventType};
     });
   });

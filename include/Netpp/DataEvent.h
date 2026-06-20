@@ -14,7 +14,8 @@ enum class EventType
   ERROR = 3,
   TIMEOUT = 4,
   RESOLVED = 5,
-  EVENT_TYPE_COUNT = 6,
+  DONE = 6,
+  EVENT_TYPE_COUNT = 7,
 };
 
 struct DataEvent

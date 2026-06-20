@@ -134,8 +134,15 @@ python3 src/server_test.py
 * Unit tests
 * Config file
 * more logger sinks
-* HTTP client DNS resolution
 * Response read timeout
+* Http improvements
+  * keep-alive
+  * chunked transfer encoding
+  * compression gzip, (deflate, brotli)
+  * static file server
+  * vhosts routing and configuration
+  * basic url rewrite
+  * reverse proxy
 
 # Licence
 

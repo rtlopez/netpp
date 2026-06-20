@@ -14,24 +14,24 @@ class Protocol;
 
 enum DrainResult
 {
-  Done,
-  Partial,
-  Close
+  Sent,    // single or group of packages sent
+  Done,    // generator done
+  Partial, // partial send
+  Close    // close connection
 };
 
 inline const char *to_string(DrainResult r)
 {
+  // clang-format off
   switch (r)
   {
-  case DrainResult::Done:
-    return "Done";
-  case DrainResult::Partial:
-    return "Partial";
-  case DrainResult::Close:
-    return "Close";
-  default:
-    return "Unknown";
+  case DrainResult::Sent:    return "Sent";
+  case DrainResult::Done:    return "Done";
+  case DrainResult::Partial: return "Partial";
+  case DrainResult::Close:   return "Close";
+  default: return "Unknown";
   }
+  // clang-format on
 }
 
 class Dispatcher

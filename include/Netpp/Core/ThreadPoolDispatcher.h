@@ -7,7 +7,10 @@
 #include <thread>
 #include <vector>
 
+#include "Netpp/Connection.h"
+#include "Netpp/DataEvent.h"
 #include "Netpp/Dispatcher.h"
+#include "Netpp/EventLoop.h"
 #include "Netpp/Logger/Logger.h"
 
 namespace Netpp::Core
@@ -134,12 +137,17 @@ public:
         }
       }
 
+      if (data.eventType == EventType::DONE)
+      {
+        return DrainResult::Done;
+      }
+
       if (data.eventType == EventType::DISCONNECT)
       {
         return DrainResult::Close; // chunk with close flag
       }
     }
-    return DrainResult::Done;
+    return DrainResult::Sent;
   }
 
   // --- Thread pool interface ---

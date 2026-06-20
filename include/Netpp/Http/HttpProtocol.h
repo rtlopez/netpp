@@ -26,6 +26,7 @@ public:
   HttpProtocol(TransportHandler *server) : _server(server)
   {
     on(EventType::DATA, [this](ConnectionPtr conn, const DataEvent &data) { handleData(conn, data); });
+    on(EventType::DONE, [this](ConnectionPtr conn, const DataEvent &data) { handleDone(conn, data); });
   }
 
   virtual ~HttpProtocol()
@@ -49,18 +50,39 @@ public:
   }
 
 private:
+  static bool shouldKeepAlive(const HttpRequest &req)
+  {
+    auto it = req.headers.find("connection");
+    if (it != req.headers.end())
+    {
+      std::string val = it->second;
+      std::transform(val.begin(), val.end(), val.begin(), ::tolower);
+      if (val == "close")
+      {
+        return false;
+      }
+      if (val == "keep-alive")
+      {
+        return true;
+      }
+    }
+    // HTTP/1.1 defaults to keep-alive, HTTP/1.0 defaults to close
+    return req.version == "1.1";
+  }
+
   void handleData(ConnectionPtr conn, const DataEvent &data)
   {
     auto s = conn->getId();
     logger(HTTP, LogLevel::DEBUG, s, data.buffer.size());
 
-    HttpRequestPtr req = getRequest(conn);
+    auto req = getRequest(conn);
     try
     {
       req->receive(reinterpret_cast<const char *>(data.buffer.data()), data.buffer.size());
 
       if (req->complete())
       {
+        bool keepAlive = shouldKeepAlive(*req);
         HttpResponse res = initResponse(*req);
         if (_middleware)
         {
@@ -72,7 +94,7 @@ private:
               "<html>\n<head><title>Not Found</title></head>\n<body><h1>Not Found</h1></body>\n</html>\n";
           res.setBody(content, sizeof(content) - 1);
         }
-        sendResponse(conn, std::move(res));
+        sendResponse(conn, std::move(res), keepAlive);
       }
     }
     catch (const HttpException &e)
@@ -82,8 +104,20 @@ private:
       static const char content[] =
           "<html>\n<head><title>Invalid request</title></head>\n<body><h1>Invalid Request</h1></body>\n</html>\n";
       res.setBody(content, sizeof(content) - 1);
-      sendResponse(conn, std::move(res));
+      sendResponse(conn, std::move(res), false);
     }
+  }
+
+  void handleDone(ConnectionPtr conn, const DataEvent &)
+  {
+    auto req = getRequest(conn);
+    auto close = !shouldKeepAlive(*req);
+    if (close)
+    {
+      _server->send(conn, {.eventType = EventType::DISCONNECT});
+    }
+    conn->setContext(std::shared_ptr<HttpRequest>()); // Clear request context
+    logger(HTTP, LogLevel::DEBUG, conn->getId(), close ? "close" : "keep-alive");
   }
 
   HttpResponse initResponse(HttpRequest &req)
@@ -95,9 +129,9 @@ private:
     return res;
   }
 
-  void sendResponse(ConnectionPtr conn, HttpResponse res)
+  void sendResponse(ConnectionPtr conn, HttpResponse res, bool keepAlive)
   {
-    res.headers["connection"] = std::string("close");
+    res.headers["connection"] = std::string{keepAlive ? "keep-alive" : "close"};
     if (!res.generator)
     {
       res.headers["content-length"] = std::to_string(res.body.size());
@@ -115,10 +149,11 @@ private:
     }
     else
     {
+      auto eventType = keepAlive ? EventType::DONE : EventType::DISCONNECT;
       size_t totalSize = headers_str.size() + res.body.size();
       if (totalSize <= 4096)
       {
-        DataEvent data{DataEvent::Buffer(totalSize), EventType::DISCONNECT};
+        DataEvent data{DataEvent::Buffer(totalSize), eventType};
         std::copy(headers_str.begin(), headers_str.end(), data.buffer.data());
         std::copy(res.body.begin(), res.body.end(), data.buffer.data() + headers_str.size());
         logger(HTTP, LogLevel::DEBUG, "headers+body", data.buffer.size());
@@ -130,7 +165,7 @@ private:
         logger(HTTP, LogLevel::DEBUG, "headers", hdr.buffer.size());
         _server->send(conn, std::move(hdr));
 
-        DataEvent body{DataEvent::Buffer(res.body.begin(), res.body.end()), EventType::DISCONNECT};
+        DataEvent body{DataEvent::Buffer(res.body.begin(), res.body.end()), eventType};
         logger(HTTP, LogLevel::DEBUG, "body", body.buffer.size());
         _server->send(conn, std::move(body));
       }

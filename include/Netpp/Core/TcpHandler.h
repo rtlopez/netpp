@@ -245,7 +245,16 @@ public:
         return;
       }
 
-      _dispatcher->runGenerator(conn);
+      if (result == DrainResult::Sent)
+      {
+        _dispatcher->runGenerator(conn);
+      }
+
+      if (result == DrainResult::Done)
+      {
+        conn->clearGenerator();
+        handleDone(conn);
+      }
 
       return;
     }
@@ -298,14 +307,12 @@ private:
 
   void handleResolved(ConnectionPtr conn)
   {
-    if (conn->getProtocol()->hasHandler(Netpp::EventType::RESOLVED))
+    if (conn->getProtocol()->hasHandler(EventType::RESOLVED))
     {
-      DataEvent data{.eventType = Netpp::EventType::RESOLVED};
-      ConnectionWeakPtr weak{conn};
-      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+      _dispatcher->post(conn, [weak = ConnectionWeakPtr(conn)]() mutable {
         if (auto conn = weak.lock())
         {
-          conn->getProtocol()->handle(conn, std::move(data));
+          conn->getProtocol()->handle(conn, {.eventType = EventType::RESOLVED});
         }
       });
     }
@@ -313,14 +320,12 @@ private:
 
   void handleConnect(ConnectionPtr conn)
   {
-    if (conn->getProtocol()->hasHandler(Netpp::EventType::CONNECT))
+    if (conn->getProtocol()->hasHandler(EventType::CONNECT))
     {
-      DataEvent data{.eventType = Netpp::EventType::CONNECT};
-      ConnectionWeakPtr weak{conn};
-      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+      _dispatcher->post(conn, [weak = ConnectionWeakPtr(conn)]() mutable {
         if (auto conn = weak.lock())
         {
-          conn->getProtocol()->handle(conn, std::move(data));
+          conn->getProtocol()->handle(conn, {.eventType = EventType::CONNECT});
         }
       });
     }
@@ -329,23 +334,35 @@ private:
   void handleDisconnect(ConnectionPtr conn)
   {
     conn->setClosed(true);
-    if (conn->getProtocol()->hasHandler(Netpp::EventType::DISCONNECT))
+    if (conn->getProtocol()->hasHandler(EventType::DISCONNECT))
     {
-      DataEvent data{.eventType = Netpp::EventType::DISCONNECT};
-      _dispatcher->post(
-          conn, [conn, data = std::move(data)]() mutable { conn->getProtocol()->handle(conn, std::move(data)); });
+      _dispatcher->post(conn,
+                        [conn]() mutable { conn->getProtocol()->handle(conn, {.eventType = EventType::DISCONNECT}); });
     }
   }
 
   void handleData(ConnectionPtr conn, DataEvent data)
   {
-    if (conn->getProtocol()->hasHandler(Netpp::EventType::DATA))
+    if (conn->getProtocol()->hasHandler(EventType::DATA))
     {
-      ConnectionWeakPtr weak{conn};
-      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+      _dispatcher->post(conn, [weak = ConnectionWeakPtr(conn), data = std::move(data)]() mutable {
         if (auto conn = weak.lock())
         {
           conn->getProtocol()->handle(conn, std::move(data));
+        }
+      });
+    }
+  }
+
+  void handleDone(ConnectionPtr conn)
+  {
+    logger(TCP, LogLevel::DEBUG, conn->getId(), "gen:done");
+    if (conn->getProtocol()->hasHandler(EventType::DONE))
+    {
+      _dispatcher->post(conn, [weak = ConnectionWeakPtr(conn)]() mutable {
+        if (auto conn = weak.lock())
+        {
+          conn->getProtocol()->handle(conn, {.eventType = EventType::DONE});
         }
       });
     }
@@ -353,14 +370,12 @@ private:
 
   void handleError(ConnectionPtr conn)
   {
-    if (conn->getProtocol()->hasHandler(Netpp::EventType::ERROR))
+    if (conn->getProtocol()->hasHandler(EventType::ERROR))
     {
-      DataEvent data{.eventType = Netpp::EventType::ERROR};
-      ConnectionWeakPtr weak{conn};
-      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+      _dispatcher->post(conn, [weak = ConnectionWeakPtr(conn)]() mutable {
         if (auto conn = weak.lock())
         {
-          conn->getProtocol()->handle(conn, std::move(data));
+          conn->getProtocol()->handle(conn, {.eventType = EventType::ERROR});
         }
       });
     }
@@ -368,14 +383,12 @@ private:
 
   void handleTimeout(ConnectionPtr conn)
   {
-    if (conn->getProtocol()->hasHandler(Netpp::EventType::TIMEOUT))
+    if (conn->getProtocol()->hasHandler(EventType::TIMEOUT))
     {
-      DataEvent data{.eventType = Netpp::EventType::TIMEOUT};
-      ConnectionWeakPtr weak{conn};
-      _dispatcher->post(conn, [weak, data = std::move(data)]() mutable {
+      _dispatcher->post(conn, [weak = ConnectionWeakPtr(conn)]() mutable {
         if (auto conn = weak.lock())
         {
-          conn->getProtocol()->handle(conn, std::move(data));
+          conn->getProtocol()->handle(conn, {.eventType = EventType::TIMEOUT});
         }
       });
     }

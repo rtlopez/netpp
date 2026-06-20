@@ -84,6 +84,69 @@ class ServerTestCase(unittest.TestCase):
         self.assertIn("text/html", resp.getheader("content-type", ""))
         self.assertIn("<html>", body)
 
+    # -- HTTP keep-alive ------------------------------------------------
+    def test_http_keep_alive_multiple_requests(self):
+        conn = http.client.HTTPConnection(HOST, HTTP_PORT, timeout=RECV_TIMEOUT)
+        for _ in range(3):
+            conn.request("GET", "/")
+            resp = conn.getresponse()
+            body = resp.read().decode()
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(resp.getheader("connection"), "keep-alive")
+            self.assertIn("<html>", body)
+        conn.close()
+
+    def test_http_keep_alive_default_http11(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(RECV_TIMEOUT)
+            s.connect((HOST, HTTP_PORT))
+            s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            data = s.recv(4096).decode()
+            self.assertIn("connection: keep-alive", data)
+            # connection should still be open, send another request
+            s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            data = s.recv(4096).decode()
+            self.assertIn("HTTP/1.1 200", data)
+            self.assertIn("connection: keep-alive", data)
+
+    def test_http_connection_close(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(RECV_TIMEOUT)
+            s.connect((HOST, HTTP_PORT))
+            s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            data = b""
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            self.assertIn(b"connection: close", data)
+            self.assertIn(b"HTTP/1.1 200", data)
+
+    def test_http_keep_alive_stream(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(RECV_TIMEOUT)
+            s.connect((HOST, HTTP_PORT))
+            # request the streaming endpoint
+            s.sendall(b"GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            # read until we get all stream lines (5 lines expected)
+            data = b""
+            while b"line 5" not in data:
+                chunk = s.recv(4096)
+                if not chunk:
+                    self.fail("Connection closed before stream completed")
+                data += chunk
+            self.assertIn(b"connection: keep-alive", data)
+            # connection should still be alive, send another request
+            s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            resp = b""
+            while b"</html>" not in resp:
+                chunk = s.recv(4096)
+                if not chunk:
+                    self.fail("Connection closed after stream, expected keep-alive")
+                resp += chunk
+            self.assertIn(b"HTTP/1.1 200", resp)
+
     # -- Chat -----------------------------------------------------------
     def test_chat(self):
         s1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
