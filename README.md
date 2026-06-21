@@ -7,6 +7,9 @@ C++ networking library educational demo
 * Event loop (epoll) with auto-stop on idle
 * Tcp client/server
 * Http client/server
+* Http 1.1 features
+  * Keep-alive (without timeout)
+  * Chunked encoding
 * Udp client/server
 * Echo client/server
 * Dns client
@@ -136,8 +139,7 @@ python3 src/server_test.py
 * more logger sinks
 * Response read timeout
 * Http improvements
-  * keep-alive
-  * chunked transfer encoding
+  * keep-alive timeout
   * compression gzip, (deflate, brotli)
   * static file server
   * vhosts routing and configuration

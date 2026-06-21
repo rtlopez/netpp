@@ -129,14 +129,16 @@ class ServerTestCase(unittest.TestCase):
             s.connect((HOST, HTTP_PORT))
             # request the streaming endpoint
             s.sendall(b"GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n")
-            # read until we get all stream lines (5 lines expected)
+            # read until we get the chunked terminator (0\r\n\r\n)
             data = b""
-            while b"line 5" not in data:
+            while b"0\r\n\r\n" not in data:
                 chunk = s.recv(4096)
                 if not chunk:
                     self.fail("Connection closed before stream completed")
                 data += chunk
+            self.assertIn(b"transfer-encoding: chunked", data)
             self.assertIn(b"connection: keep-alive", data)
+            self.assertIn(b"line 5", data)
             # connection should still be alive, send another request
             s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
             resp = b""
@@ -146,6 +148,17 @@ class ServerTestCase(unittest.TestCase):
                     self.fail("Connection closed after stream, expected keep-alive")
                 resp += chunk
             self.assertIn(b"HTTP/1.1 200", resp)
+
+    def test_http_chunked_encoding(self):
+        conn = http.client.HTTPConnection(HOST, HTTP_PORT, timeout=RECV_TIMEOUT)
+        conn.request("GET", "/stream")
+        resp = conn.getresponse()
+        body = resp.read().decode()
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.getheader("transfer-encoding"), "chunked")
+        self.assertIn("line 1", body)
+        self.assertIn("line 5", body)
+        conn.close()
 
     # -- Chat -----------------------------------------------------------
     def test_chat(self):

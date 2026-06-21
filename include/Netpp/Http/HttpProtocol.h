@@ -5,6 +5,7 @@
 #include <string>
 
 #include "Netpp/DataEvent.h"
+#include "Netpp/Http/ChunkedEncoder.h"
 #include "Netpp/Http/HttpException.h"
 #include "Netpp/Http/HttpRequest.h"
 #include "Netpp/Http/HttpResponse.h"
@@ -120,7 +121,7 @@ private:
     logger(HTTP, LogLevel::DEBUG, conn->getId(), close ? "close" : "keep-alive");
   }
 
-  HttpResponse initResponse(HttpRequest &req)
+  HttpResponse initResponse(const HttpRequest &req)
   {
     HttpResponse res;
     res.version = req.version;
@@ -135,6 +136,11 @@ private:
     if (!res.generator)
     {
       res.headers["content-length"] = std::to_string(res.body.size());
+    }
+    else if (res.version == "1.1" && res.headers.find("content-length") == res.headers.end())
+    {
+      res.headers["transfer-encoding"] = "chunked";
+      res.generator = ChunkedEncoder::wrap(std::move(res.generator));
     }
     const auto headers_str = res.str();
 
