@@ -24,13 +24,13 @@ class ThreadPoolDispatcher : public Dispatcher
 public:
   static constexpr const char *DISP = "disp";
 
-  ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop), _stop(false)
+  ThreadPoolDispatcher(EventLoop *loop, size_t numThreads = 8) : Dispatcher(loop)
   {
     logger(DISP, LogLevel::DEBUG, numThreads);
     _workers.reserve(numThreads);
     for (size_t i = 0; i < numThreads; i++)
     {
-      _workers.emplace_back([this] { workerLoop(); });
+      _workers.emplace_back([this](std::stop_token st) { workerLoop(st); });
     }
   }
 
@@ -43,23 +43,11 @@ public:
   void stop() override
   {
     logger(DISP, LogLevel::DEBUG, "");
-    {
-      std::scoped_lock lock(_taskMutex);
-      if (_stop)
-      {
-        return; // already stopped
-      }
-      _stop = true;
-    }
-    _taskCv.notify_all();
-
     for (auto &w : _workers)
     {
-      if (w.joinable())
-      {
-        w.join();
-      }
+      w.request_stop();
     }
+    _workers.clear(); // jthread destructor joins each thread
   }
 
   // --- Dispatcher interface ---
@@ -209,17 +197,16 @@ private:
     }
   }
 
-  void workerLoop()
+  void workerLoop(std::stop_token st)
   {
     while (true)
     {
       MoveOnlyFunction<void()> task;
       {
         std::unique_lock<std::mutex> lock(_taskMutex);
-        _taskCv.wait(lock, [this] { return _stop || !_taskQueue.empty(); });
-        if (_stop && _taskQueue.empty())
+        if (!_taskCv.wait(lock, st, [this] { return !_taskQueue.empty(); }))
         {
-          return;
+          return; // stop requested and queue empty
         }
         task = std::move(_taskQueue.front());
         _taskQueue.pop();
@@ -230,13 +217,12 @@ private:
   }
 
   // Thread pool
-  std::vector<std::thread> _workers;
-  bool _stop;
+  std::vector<std::jthread> _workers;
 
   // Recv/task queue (main thread produces, workers consume)
   std::queue<MoveOnlyFunction<void()>> _taskQueue;
   std::mutex _taskMutex;
-  std::condition_variable _taskCv;
+  std::condition_variable_any _taskCv;
 };
 
 } // namespace Netpp::Core
