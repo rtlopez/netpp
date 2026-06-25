@@ -4,17 +4,21 @@
 #include <string>
 #include <vector>
 
-#include "HttpRequest.h"
-#include "HttpResponse.h"
+#include "Netpp/Connection.h"
+#include "Netpp/Http/HttpRequest.h"
+#include "Netpp/Http/HttpResponse.h"
 
-namespace Netpp::Http {
+namespace Netpp::Http
+{
 
-class HttpRouter {
+class HttpRouter
+{
 public:
   HttpRouter() = default;
   ~HttpRouter() = default;
 
-  void on(const std::string method, const std::string path, std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
+  void on(const std::string method, const std::string path,
+          std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
   {
     _routes.emplace_back(std::move(method), std::move(path), std::move(handler));
   }
@@ -34,16 +38,22 @@ public:
   }
 
 private:
-  struct Route {
+  struct Route
+  {
     std::string method;
     std::string path;
     std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler;
 
-    Route(std::string method, std::string path, std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
-      : method(std::move(method)), path(std::move(path)), handler(std::move(handler)) {}
+    Route(std::string method, std::string path,
+          std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
+        : method(std::move(method)), path(std::move(path)), handler(std::move(handler))
+    {
+    }
 
-    bool match(const std::string& method, const std::string& path) const {
-      return this->method == method && this->path == path;
+    bool match(const std::string &method, const std::string &path) const
+    {
+      bool match = method == this->method && path.starts_with(this->path);
+      return match;
     }
   };
   std::vector<Route> _routes;

@@ -19,6 +19,7 @@
 #include "Netpp/DataEvent.h"
 #include "Netpp/Echo/EchoProtocol.h"
 #include "Netpp/FileStream.h"
+#include "Netpp/Http/HttpFileServer.h"
 #include "Netpp/Http/HttpProtocol.h"
 #include "Netpp/Http/HttpRouter.h"
 #include "Netpp/Stack.h"
@@ -136,12 +137,6 @@ int main(int argc, const char **argv)
         logger(SERVER, LogLevel::INFO, "HTTP", conn->getPeerName(), req.method, req.path, res.status);
       });
 
-  router.on("GET", "/", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
-    const char content[] = "<html>\n<head><title>Netpp HTTP Server</title></head>\n<body>"
-                           "<h1>Welcome to Netpp HTTP Server</h1></body>\n</html>\n";
-    res.setBody(content, sizeof(content) - 1);
-  });
-
   router.on("GET", "/big", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
     std::ostringstream ss;
     ss << "<html>\n<head><title>Big Response</title></head>\n<body><h1>Big Response</h1><p>\n";
@@ -192,64 +187,16 @@ int main(int argc, const char **argv)
     res.setGenerator([stream = std::move(stream)]() { return (*stream)(); });
   });
 
-  router.on("GET", "/src", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
-    std::filesystem::path srcDir = "src";
+  Netpp::Http::HttpFileServer fileServer(std::filesystem::current_path(), true, "index.html");
+  router.on("GET", "/src", fileServer);
 
-    if (!std::filesystem::is_directory(srcDir))
-    {
-      res.status = 404;
-      return;
-    }
-
-    std::ostringstream ss;
-    ss << "<html>\n<head>\n<title>src/ Directory</title>\n<style>"
-       << "body { font-family: monospace; margin: 20px; }"
-       << "table { border-collapse: collapse; width: 100%; }"
-       << "th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }"
-       << "th.right, td.right { border: 1px solid #ccc; padding: 8px; text-align: right; }"
-       << "th { background-color: #f0f0f0; }"
-       << "</style>\n</head>\n<body>\n"
-       << "<h1>Directory: src/</h1>\n"
-       << "<table>\n<thead>\n<tr><th>File</th><th class=\"right\">Size</th><th "
-          "class=\"right\">Modified</th></tr>\n</thead>\n<tbody>\n";
-
-    try
-    {
-      for (const auto &entry : std::filesystem::directory_iterator(srcDir))
-      {
-        if (entry.is_regular_file())
-        {
-          auto size = entry.file_size();
-          auto lastWrite = entry.last_write_time();
-
-          // time to string
-          auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-              lastWrite - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-          auto tt = std::chrono::system_clock::to_time_t(sctp);
-
-          std::string timeStr(std::ctime(&tt));
-          timeStr.pop_back(); // Remove newline
-
-          ss << "<tr><td><a href=\"/src/" << entry.path().filename().string() << "\">"
-             << entry.path().filename().string() << "</a></td>"
-             << "<td class=\"right\">" << size << " B</td>"
-             << "<td class=\"right\">" << timeStr << "</td></tr>\n";
-        }
-      }
-    }
-    catch (const std::exception &e)
-    {
-      logger(SERVER, LogLevel::ERROR, "Error reading src directory:", e.what());
-      res.status = 500;
-      return;
-    }
-
-    ss << "</tbody>\n</table>\n</body>\n</html>\n";
-    res.setBody(ss.str());
+  router.on("GET", "/", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
+    const char content[] = "<html>\n<head><title>Netpp HTTP Server</title></head>\n<body>"
+                           "<h1>Welcome to Netpp HTTP Server</h1></body>\n</html>\n";
+    res.setBody(content, sizeof(content) - 1);
   });
 
   stack.run();
-
   logger(SERVER, LogLevel::INFO, "Server stopping");
 
   return 0;
