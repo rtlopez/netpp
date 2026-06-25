@@ -138,7 +138,7 @@ int main(int argc, const char **argv)
         logger(SERVER, LogLevel::INFO, "HTTP", conn->getPeerName(), req.method, req.path, res.status);
       });
 
-  router.on("GET", "/big", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
+  router.on("GET", "/big", true, [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
     std::ostringstream ss;
     ss << "<html>\n<head><title>Big Response</title></head>\n<body><h1>Big Response</h1><p>\n";
     for (int i = 1; i <= 50000; i++)
@@ -153,7 +153,7 @@ int main(int argc, const char **argv)
     res.setBody(ss.str());
   });
 
-  router.on("GET", "/stream", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
+  router.on("GET", "/stream", 1, [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
     logger(SERVER, LogLevel::INFO, "[HTTP]", "/stream");
     res.setGenerator([counter = 0]() mutable -> Netpp::DataEvent {
       counter++;
@@ -163,7 +163,7 @@ int main(int argc, const char **argv)
     });
   });
 
-  router.on("GET", "/file", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
+  router.on("GET", "/file", true, [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
     std::filesystem::path filename = "src/server.cpp";
     // std::cout << "[HTTP] " << filename << std::endl;
     if (!std::filesystem::is_regular_file(filename))
@@ -190,7 +190,7 @@ int main(int argc, const char **argv)
 
   Netpp::MimeTypes mimeTypes("/etc/mime.types");
   Netpp::Http::HttpFileServer fileServer(std::filesystem::current_path(), true, "index.html", mimeTypes);
-  router.on("GET", "/src", fileServer);
+  router.on("GET", "/src", false, fileServer);
 
   router.on("GET", "/forbidden", true,
             [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) { res.status = 403; });

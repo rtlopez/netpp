@@ -17,12 +17,6 @@ public:
   HttpRouter() = default;
   ~HttpRouter() = default;
 
-  void on(const std::string method, const std::string path,
-          std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
-  {
-    _routes.emplace_back(std::move(method), std::move(path), std::move(handler));
-  }
-
   void on(const std::string method, const std::string path, bool exact,
           std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
   {
@@ -50,12 +44,6 @@ private:
     std::string path;
     bool exact = false;
     std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler;
-
-    Route(std::string method, std::string path,
-          std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
-        : method(std::move(method)), path(std::move(path)), handler(std::move(handler))
-    {
-    }
 
     Route(std::string method, std::string path, bool exact,
           std::function<void(HttpRequest &, HttpResponse &, ConnectionPtr)> handler)
