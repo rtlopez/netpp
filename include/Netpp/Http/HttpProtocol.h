@@ -89,11 +89,9 @@ private:
         {
           _middleware(*req, res, conn);
         }
-        if (res.status == 404)
+        if (res.status >= 400 && res.body.empty())
         {
-          static const char content[] =
-              "<html>\n<head><title>Not Found</title></head>\n<body><h1>Not Found</h1></body>\n</html>\n";
-          res.setBody(content, sizeof(content) - 1);
+          setResponseError(res, res.status);
         }
         sendResponse(conn, std::move(res), keepAlive);
       }
@@ -101,12 +99,18 @@ private:
     catch (const HttpException &e)
     {
       HttpResponse res = initResponse(*req);
-      res.status = e.code();
-      static const char content[] =
-          "<html>\n<head><title>Invalid request</title></head>\n<body><h1>Invalid Request</h1></body>\n</html>\n";
-      res.setBody(content, sizeof(content) - 1);
+      setResponseError(res, e.code());
       sendResponse(conn, std::move(res), false);
     }
+  }
+
+  void setResponseError(HttpResponse &res, int code)
+  {
+    res.status = code;
+    const auto *message = HttpResponse::codeToMessage(code);
+    std::ostringstream ss;
+    ss << "<html>\n<head><title>" << message << "</title></head>\n<body><h1>" << message << "</h1></body>\n</html>\n";
+    res.setBody(std::move(ss).str());
   }
 
   void handleDone(ConnectionPtr conn, const DataEvent &)

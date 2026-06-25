@@ -54,6 +54,7 @@ public:
       return "Created";
     case 204:
       return "No Content";
+
     case 301:
       return "Moved Permanently";
     case 302:
@@ -99,6 +100,7 @@ public:
     case 504:
       return "Gateway Timeout";
     }
+
     return "Unknown";
   }
 

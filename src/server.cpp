@@ -22,6 +22,7 @@
 #include "Netpp/Http/HttpFileServer.h"
 #include "Netpp/Http/HttpProtocol.h"
 #include "Netpp/Http/HttpRouter.h"
+#include "Netpp/MimeTypes.h"
 #include "Netpp/Stack.h"
 
 using Netpp::Logger::logger;
@@ -187,10 +188,14 @@ int main(int argc, const char **argv)
     res.setGenerator([stream = std::move(stream)]() { return (*stream)(); });
   });
 
-  Netpp::Http::HttpFileServer fileServer(std::filesystem::current_path(), true, "index.html");
+  Netpp::MimeTypes mimeTypes("/etc/mime.types");
+  Netpp::Http::HttpFileServer fileServer(std::filesystem::current_path(), true, "index.html", mimeTypes);
   router.on("GET", "/src", fileServer);
 
-  router.on("GET", "/", [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
+  router.on("GET", "/forbidden", true,
+            [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) { res.status = 403; });
+
+  router.on("GET", "/", true, [](Netpp::Http::HttpRequest &, Netpp::Http::HttpResponse &res, Netpp::ConnectionPtr) {
     const char content[] = "<html>\n<head><title>Netpp HTTP Server</title></head>\n<body>"
                            "<h1>Welcome to Netpp HTTP Server</h1></body>\n</html>\n";
     res.setBody(content, sizeof(content) - 1);
