@@ -7,3 +7,4 @@ build/
 /client
 /server
 core.*
+CMakeUserPresets.json

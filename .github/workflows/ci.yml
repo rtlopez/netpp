@@ -12,14 +12,11 @@ permissions:
 
 jobs:
   build:
-    name: Build Project
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.preset }})
+    runs-on: ubuntu-26.04
     strategy:
       matrix:
-        target: ['Debug', 'Release']
-        compiler:
-          - { cc: gcc, cxx: g++ }
-          - { cc: clang, cxx: clang++ }
+        preset: ['debug-gcc', 'debug-clang', 'release-gcc', 'release-clang', 'asan', 'tsan', 'ubsan']
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -30,42 +27,32 @@ jobs:
           echo "build_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
           echo "build_tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
           echo "build_sha=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_ENV
-          echo "build_config=${{ matrix.target }}-${{ matrix.compiler.cc }}" >> $GITHUB_ENV
-          echo "build_dir=build/${{ matrix.target }}-${{ matrix.compiler.cc }}" >> $GITHUB_ENV
+          echo "build_dir=build/${{ matrix.preset }}" >> $GITHUB_ENV
 
-      - name: Configure and Build
-        uses: threeal/cmake-action@v2.1.0
-        with:
-          options: |
-            CMAKE_BUILD_TYPE=${{ matrix.target }}
-          generator: Ninja
-          cxx-compiler: ${{ matrix.compiler.cxx }}
-          c-compiler: ${{ matrix.compiler.cc }}
-          build-dir: ${{ env.build_dir }}
-          build-args: "-v"
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
 
-      # - name: Generate Project
-      #   run: cmake -S . -D CMAKE_BUILD_TYPE=${{ matrix.target }} -D CMAKE_C_COMPILER=${{ matrix.compiler.cc }} -D CMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }} -B ${{ env.build_dir }}
-
-      # - name: Build Project
-      #   run: cmake --build ${{ env.build_dir }} -v
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} -v
 
       - name: Publish Artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: ${{ env.build_config }}-${{ env.build_sha }}
+          name: ${{ matrix.preset }}-${{ env.build_sha }}
           path: |
             ${{ env.build_dir }}/server
             ${{ env.build_dir }}/client
+            ${{ env.build_dir }}/dns_client
+            ${{ env.build_dir }}/http_client
 
       - name: Run Unit Tests
         id: tests
-        run: ctest --test-dir ${{ env.build_dir }} --output-junit report.xml --output-on-failure
+        run: ctest --preset ${{ matrix.preset }} --output-junit ${{ env.build_dir }}/report.xml
 
       - name: Publish Test Report
         uses: dorny/test-reporter@v3
         if: steps.tests.outcome == 'success' || steps.tests.outcome == 'failure'
         with:
-          name: Tests (${{ env.build_config }})
+          name: Tests (${{ matrix.preset }})
           path: ${{ env.build_dir }}/report.xml
           reporter: java-junit

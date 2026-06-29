@@ -9,6 +9,29 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 add_compile_options(-Wall -Wextra)
 
+# --- Sanitizers ---
+
+# Option A: explicit sanitizer selection via -DNETPP_SANITIZER=address,undefined
+set(NETPP_SANITIZER "" CACHE STRING "Enable sanitizer (address, thread, undefined, memory, leak)")
+
+if(NETPP_SANITIZER)
+    add_compile_options(-fsanitize=${NETPP_SANITIZER} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${NETPP_SANITIZER})
+endif()
+
+# Option B: custom build types (use via -DCMAKE_BUILD_TYPE=ASan / TSan / UBSan)
+set(CMAKE_CXX_FLAGS_ASAN "-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" CACHE STRING "")
+set(CMAKE_EXE_LINKER_FLAGS_ASAN "-fsanitize=address,undefined" CACHE STRING "")
+set(CMAKE_SHARED_LINKER_FLAGS_ASAN "-fsanitize=address,undefined" CACHE STRING "")
+
+set(CMAKE_CXX_FLAGS_TSAN "-O1 -g -fsanitize=thread -fno-omit-frame-pointer" CACHE STRING "")
+set(CMAKE_EXE_LINKER_FLAGS_TSAN "-fsanitize=thread" CACHE STRING "")
+set(CMAKE_SHARED_LINKER_FLAGS_TSAN "-fsanitize=thread" CACHE STRING "")
+
+set(CMAKE_CXX_FLAGS_UBSAN "-O1 -g -fsanitize=undefined -fno-omit-frame-pointer" CACHE STRING "")
+set(CMAKE_EXE_LINKER_FLAGS_UBSAN "-fsanitize=undefined" CACHE STRING "")
+set(CMAKE_SHARED_LINKER_FLAGS_UBSAN "-fsanitize=undefined" CACHE STRING "")
+
 include_directories(include/)
 
 include(FetchContent)
