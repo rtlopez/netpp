@@ -17,16 +17,16 @@ This file defines shared project rules for AI coding agents.
 ## Build and Toolchain
 
 - Use CMake as the build system.
-- Preferred configured build dir: `build/`.
+- Preferred configured build dir: `build/<preset>` (managed by CMake presets).
 - Project standard: C++20.
 - Compiler warnings are enabled (`-Wall -Wextra`); new code should compile warning-free.
 
-Typical commands:
+Typical commands (using preset `debug-gcc`):
 
 ```bash
-cmake -S . -B build -D CMAKE_BUILD_TYPE=Debug
-cmake --build build -j2
-ctest --test-dir build
+cmake --preset debug-gcc
+cmake --build --preset debug-gcc
+ctest --preset debug-gcc
 ```
 
 ## Change Scope Rules

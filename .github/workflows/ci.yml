@@ -40,7 +40,7 @@ jobs:
       - name: Publish Artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: ${{ matrix.preset }}-${{ env.build_sha }}
+          name: netpp-${{ matrix.preset }}-${{ env.build_sha }}
           path: |
             ${{ env.build_dir }}/server
             ${{ env.build_dir }}/client
